@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
-import { supabase } from './lib/supabase';
+import { authApi } from './api/auth';
 import { setApiAuthToken } from './api/client';
-import { useTasks } from './hooks/useTasks';
 import { useDemoTasks } from './hooks/useDemoTasks';
+import { useTasks } from './hooks/useTasks';
 import {
   clearDemoUser,
   enableDemoUser,
@@ -11,28 +11,29 @@ import {
   readOnboardingState,
   writeOnboardingState,
 } from './lib/demo';
+import { supabase } from './lib/supabase';
 import { AuthScreen } from './components/AuthScreen';
-import { OnboardingScreen } from './components/OnboardingScreen';
-import { FilterBar } from './components/FilterBar';
-import { TaskList } from './components/TaskList';
 import { CreateTaskModal } from './components/CreateTaskModal';
-import { TaskModal } from './components/TaskModal';
+import { InsightsPanel } from './components/InsightsPanel';
+import { OnboardingScreen } from './components/OnboardingScreen';
+import { TaskFeedCard } from './components/TaskFeedCard';
 import { Button } from './components/ui/Button';
 import { Card } from './components/ui/Card';
 import { ToastMessage, ToastRegion } from './components/ui/ToastRegion';
 import {
+  CalendarDaysIcon,
   MenuIcon,
-  MoonIcon,
   PlusIcon,
-  ShieldIcon,
-  SparkIcon,
-  SunIcon,
+  SearchIcon,
+  SlidersIcon,
+  TaskNotesLogoIcon,
+  UserCircleIcon,
 } from './components/ui/Icons';
-import { Task, TaskSort, WorkspaceUser } from './types';
-import './index.css';
+import { Input } from './components/ui/Input';
+import { cn } from './lib/cn';
+import { AuthUser, Task, TaskFilter, TaskSort, WorkspaceUser } from './types';
 
-type AppTheme = 'light' | 'dark';
-type NavSection = 'dashboard' | 'tasks' | 'settings';
+type WorkspaceTab = 'feed' | 'dashboard';
 
 function createToast(title: string, tone: ToastMessage['tone'] = 'info'): ToastMessage {
   return {
@@ -70,45 +71,68 @@ function sortTasks(tasks: Task[], sort: TaskSort) {
   });
 }
 
-function getWorkspaceUser(session: Session | null): WorkspaceUser | null {
+function getWorkspaceUser(session: Session | null, authUser: AuthUser | null): WorkspaceUser | null {
   if (!session) return null;
+  const email = authUser?.email ?? session.user.email ?? null;
   return {
-    id: session.user.id,
-    email: session.user.email ?? null,
-    name: session.user.email?.split('@')[0] ?? 'Teammate',
+    id: authUser?.id ?? session.user.id,
+    email,
+    name: email?.split('@')[0] ?? 'Teammate',
     mode: 'live',
   };
 }
 
+function TaskFeedSkeleton() {
+  return (
+    <div className="space-y-4">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          key={index}
+          className="animate-pulse rounded-[30px] border border-[var(--border)] bg-[var(--surface-primary)] p-5"
+        >
+          <div className="flex items-start gap-4">
+            <div className="mt-1 h-6 w-6 rounded-full bg-[var(--surface-tertiary)]" />
+            <div className="flex-1 space-y-3">
+              <div className="flex gap-2">
+                <div className="h-6 w-20 rounded-full bg-[var(--surface-tertiary)]" />
+                <div className="h-6 w-24 rounded-full bg-[var(--surface-tertiary)]" />
+              </div>
+              <div className="h-5 w-2/5 rounded-full bg-[var(--surface-tertiary)]" />
+              <div className="h-4 w-full rounded-full bg-[var(--bg-secondary)]" />
+              <div className="h-4 w-3/4 rounded-full bg-[var(--bg-secondary)]" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Workspace({
   user,
+  onSignOut,
+  onSessionError,
   theme,
   onThemeToggle,
-  onSignOut,
 }: {
   user: WorkspaceUser;
-  theme: AppTheme;
-  onThemeToggle: () => void;
   onSignOut: () => Promise<void>;
+  onSessionError: (message: string) => void;
+  theme: 'light' | 'dark';
+  onThemeToggle: () => void;
 }) {
   const isDemo = user.mode === 'demo';
   const liveTasks = useTasks(!isDemo);
   const demoTasks = useDemoTasks(isDemo, user.id);
   const taskSource = isDemo ? demoTasks : liveTasks;
-
   const {
     tasks,
     filter,
     setFilter,
     search,
     setSearch,
-    page,
-    totalPages,
-    hasNextPage,
-    hasPreviousPage,
-    goToNextPage,
-    goToPreviousPage,
     loading,
+    loadingMore,
     error,
     counts,
     createTask,
@@ -117,26 +141,31 @@ function Workspace({
     toggleTask,
     addNote,
     deleteNote,
+    hasNextPage,
+    goToNextPage,
   } = taskSource;
-
   const [showCreate, setShowCreate] = useState(false);
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [sort, setSort] = useState<TaskSort>('newest');
-  const [section, setSection] = useState<NavSection>('dashboard');
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [mobileTab, setMobileTab] = useState<WorkspaceTab>('feed');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  const sortedTasks = useMemo(() => sortTasks(tasks, sort), [sort, tasks]);
-  const syncedActiveTask = activeTask ? sortedTasks.find((task) => task.id === activeTask.id) ?? null : null;
-  const pendingTasks = useMemo(() => sortedTasks.filter((task) => !task.completed), [sortedTasks]);
-  const completedTasks = useMemo(() => sortedTasks.filter((task) => task.completed), [sortedTasks]);
-  const dueSoonCount = useMemo(
+  const visibleTasks = useMemo(() => sortTasks(tasks, sort), [sort, tasks]);
+  const pendingTasks = useMemo(() => visibleTasks.filter((task) => !task.completed), [visibleTasks]);
+  const dueTodayCount = useMemo(
     () =>
       pendingTasks.filter((task) => {
         if (!task.dueDate) return false;
-        const diff = new Date(task.dueDate).getTime() - Date.now();
-        return diff <= 1000 * 60 * 60 * 24 * 3;
+        const due = new Date(task.dueDate);
+        const now = new Date();
+        return due.toDateString() === now.toDateString();
       }).length,
+    [pendingTasks],
+  );
+  const urgentCount = useMemo(
+    () => pendingTasks.filter((task) => task.priority === 'high').length,
     [pendingTasks],
   );
 
@@ -147,6 +176,36 @@ function Workspace({
     }, 3200);
     return () => window.clearTimeout(timeout);
   }, [toasts]);
+
+  useEffect(() => {
+    if (expandedTaskId && !visibleTasks.some((task) => task.id === expandedTaskId)) {
+      setExpandedTaskId(null);
+    }
+  }, [expandedTaskId, visibleTasks]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const closeMenu = () => setMenuOpen(false);
+    window.addEventListener('click', closeMenu);
+    return () => window.removeEventListener('click', closeMenu);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!loadMoreRef.current || !hasNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          void goToNextPage();
+        }
+      },
+      { rootMargin: '280px' },
+    );
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [goToNextPage, hasNextPage]);
 
   const pushToast = (toast: ToastMessage) => {
     setToasts((current) => [...current, toast].slice(-3));
@@ -163,291 +222,445 @@ function Workspace({
       return result;
     } catch (err: unknown) {
       const nextError = err as { message?: string };
-      pushToast(createToast(nextError.message ?? errorMessage, 'error'));
+      const message = nextError.message ?? errorMessage;
+      pushToast(createToast(message, 'error'));
+      if (message.toLowerCase().includes('authentication')) {
+        onSessionError(message);
+      }
       throw err;
     }
   };
 
-  const navigation = [
-    { id: 'dashboard' as const, label: 'Dashboard', helper: 'Overview and activity' },
-    { id: 'tasks' as const, label: 'Tasks', helper: 'Plan and execute' },
-    { id: 'settings' as const, label: 'Settings', helper: 'Theme and access' },
-  ];
+  const filterCounts: Record<TaskFilter, number> = {
+    all: counts.all,
+    pending: counts.pending,
+    completed: counts.completed,
+  };
 
-  return (
-    <div className="app-shell">
-      <aside className={`sidebar ${mobileNavOpen ? 'sidebar-open' : ''}`}>
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <SparkIcon width={20} height={20} />
-          </div>
+  const emptyCopy: Record<TaskFilter, { title: string; copy: string }> = {
+    all: {
+      title: 'Your feed is ready for its first task.',
+      copy: 'Create a task to activate the dashboard, trend chart, and today summary.',
+    },
+    pending: {
+      title: 'No active work right now.',
+      copy: 'This is a good moment to add the next priority before it becomes scattered.',
+    },
+    completed: {
+      title: 'Completed work will appear here.',
+      copy: 'Mark a task done and this lane turns into your lightweight activity archive.',
+    },
+  };
+
+  const feedContent = (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-4 rounded-[30px] border border-[var(--border)] bg-[var(--surface-secondary)] p-4 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="brand-name">TaskNotes</p>
-            <p className="brand-subtitle">2026 workspace</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
+              Feed controls
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+              Action stream
+            </h2>
+          </div>
+
+          <div className="grid gap-3 xl:min-w-[680px] xl:grid-cols-[minmax(0,1fr)_260px]">
+            <Input
+              label="Quick find"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search titles, notes, and descriptions"
+              icon={<SearchIcon width={16} height={16} />}
+              containerClassName="min-w-0"
+              theme={theme}
+            />
+
+            <label className="grid gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-muted)]">
+                Sort by
+              </span>
+              <select
+                className="min-h-12 rounded-2xl border border-[var(--border)] bg-[var(--surface-primary)] px-4 text-sm text-[var(--text-primary)] outline-none transition focus:border-[var(--accent)] focus:ring-4 focus:ring-[var(--focus-ring)]"
+                value={sort}
+                onChange={(event) => setSort(event.target.value as TaskSort)}
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="priority">Priority</option>
+                <option value="due-soon">Due soon</option>
+                <option value="alphabetical">Alphabetical</option>
+              </select>
+            </label>
           </div>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Workspace navigation">
-          {navigation.map((item) => (
-            <button
-              key={item.id}
-              className={`nav-item ${section === item.id ? 'nav-item-active' : ''}`}
-              onClick={() => {
-                setSection(item.id);
-                setMobileNavOpen(false);
-              }}
-            >
-              <span>{item.label}</span>
-              <small>{item.helper}</small>
-            </button>
-          ))}
-        </nav>
+        <div className="flex flex-wrap gap-2">
+          {([
+            ['all', 'All tasks'],
+            ['pending', 'In progress'],
+            ['completed', 'Completed'],
+          ] as const).map(([key, label]) => {
+            const active = filter === key;
+            return (
+              <button
+                key={key}
+                className={cn(
+                  'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition duration-200',
+                  active
+                    ? 'border border-[var(--accent)] bg-[var(--accent)] text-[var(--text-inverse)]'
+                    : 'bg-[var(--surface-primary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]',
+                )}
+                onClick={() => setFilter(key)}
+              >
+                <span>{label}</span>
+                <span
+                  className={cn(
+                    'rounded-full px-2 py-0.5 text-xs',
+                    active ? 'bg-[var(--accent-soft)] text-[var(--text-inverse)]' : 'bg-[var(--bg-secondary)] text-[var(--text-muted)]',
+                  )}
+                >
+                  {filterCounts[key]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-        <Card className="sidebar-card">
-          <div className="secure-badge secure-badge-inline">
-            <ShieldIcon width={16} height={16} />
-            <span>{isDemo ? 'Demo workspace' : 'Secure workspace'}</span>
-          </div>
-          <p className="sidebar-card-copy">
-            {isDemo
-              ? 'Seeded data is loaded locally so you can review the full product flow without auth friction.'
-              : 'Your tasks stay scoped to the signed-in user with protected backend routes.'}
-          </p>
+      {error ? (
+        <Card className="rounded-[30px] border-[var(--error-border)] bg-[var(--error-bg)] p-5 text-[var(--error-fg)]">
+          <h3 className="text-lg font-semibold">We couldn’t load your feed.</h3>
+          <p className="mt-2 text-sm">{error}</p>
         </Card>
-      </aside>
+      ) : null}
 
-      <div className="workspace">
-        <header className="topbar">
-          <div className="topbar-left">
-            <button className="icon-action topbar-menu" onClick={() => setMobileNavOpen((current) => !current)} aria-label="Toggle navigation">
-              <MenuIcon width={18} height={18} />
-            </button>
-            <div>
-              <p className="breadcrumb">Workspace / {section}</p>
-              <h1>{section === 'dashboard' ? 'Dashboard' : section === 'tasks' ? 'Task center' : 'Settings'}</h1>
-            </div>
+      {!error && loading ? <TaskFeedSkeleton /> : null}
+
+      {!error && !loading && !visibleTasks.length ? (
+        <Card className="rounded-[32px] border-dashed border-[var(--border-strong)] bg-[var(--surface-primary)] p-8 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[24px] bg-[var(--surface-tertiary)] text-[var(--text-muted)]">
+            <CalendarDaysIcon width={24} height={24} />
           </div>
-
-          <div className="topbar-actions">
-            <button className="theme-toggle" onClick={onThemeToggle} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-              {theme === 'dark' ? <SunIcon width={16} height={16} /> : <MoonIcon width={16} height={16} />}
-            </button>
-            <Button variant="secondary" onClick={onSignOut}>
-              Sign out
-            </Button>
+          <h3 className="mt-5 text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+            {emptyCopy[filter].title}
+          </h3>
+          <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-[var(--text-secondary)]">
+            {emptyCopy[filter].copy}
+          </p>
+          <div className="mt-6 flex justify-center">
             <Button onClick={() => setShowCreate(true)}>
               <PlusIcon width={16} height={16} />
               Add task
             </Button>
           </div>
-        </header>
+        </Card>
+      ) : null}
 
-        <main className="workspace-main">
-          {section === 'dashboard' ? (
-            <section className="dashboard-grid">
-              <Card elevated className="hero-card">
-                <p className="eyebrow">Today at a glance</p>
-                <h2>{user.name}, your workspace is set up to keep momentum high.</h2>
-                <p className="hero-copy">
-                  {counts.pending
-                    ? `${counts.pending} active tasks are in flight, with ${dueSoonCount} due soon.`
-                    : 'You’re caught up. Capture the next priority before it becomes background noise.'}
-                </p>
-                <div className="hero-actions">
-                  <Button onClick={() => setSection('tasks')}>Review tasks</Button>
-                  <Button variant="ghost" onClick={() => setShowCreate(true)}>
-                    Capture new work
-                  </Button>
-                </div>
-              </Card>
+      {!error && !loading && visibleTasks.length ? (
+        <div className="space-y-4">
+          {visibleTasks.map((task) => (
+            <TaskFeedCard
+              key={task.id}
+              task={task}
+              theme={theme}
+              expanded={expandedTaskId === task.id}
+              onToggleExpand={(taskId) =>
+                setExpandedTaskId((current) => (current === taskId ? null : taskId))
+              }
+              onToggleStatus={(id, completed) =>
+                wrapAction(
+                  () => toggleTask(id, completed),
+                  completed ? 'Task moved back to in progress.' : 'Task completed.',
+                  'We couldn’t update that task.',
+                )
+              }
+              onDelete={(id) =>
+                wrapAction(() => deleteTask(id), 'Task removed.', 'We couldn’t delete that task.')
+              }
+              onUpdate={(id, payload) =>
+                wrapAction(() => updateTask(id, payload), 'Task updated.', 'We couldn’t save that task.')
+              }
+              onAddNote={(taskId, payload) =>
+                wrapAction(() => addNote(taskId, payload), 'Note added.', 'We couldn’t add that note.')
+              }
+              onDeleteNote={(taskId, noteId) =>
+                wrapAction(
+                  () => deleteNote(taskId, noteId),
+                  'Note removed.',
+                  'We couldn’t remove that note.',
+                )
+              }
+            />
+          ))}
 
-              <div className="summary-grid">
-                <Card className="summary-card">
-                  <p className="summary-label">Total tasks</p>
-                  <strong>{counts.all}</strong>
-                  <span>Across your current workspace</span>
-                </Card>
-                <Card className="summary-card">
-                  <p className="summary-label">In progress</p>
-                  <strong>{counts.pending}</strong>
-                  <span>Open items needing attention</span>
-                </Card>
-                <Card className="summary-card">
-                  <p className="summary-label">Completed</p>
-                  <strong>{counts.completed}</strong>
-                  <span>Finished and ready for review</span>
-                </Card>
-                <Card className="summary-card">
-                  <p className="summary-label">Due soon</p>
-                  <strong>{dueSoonCount}</strong>
-                  <span>Due within the next 3 days</span>
-                </Card>
-              </div>
+          <div ref={loadMoreRef} className="h-4" />
 
-              <Card className="activity-card">
-                <div className="section-header">
-                  <div>
-                    <p className="eyebrow">Recent activity</p>
-                    <h3>Priority queue</h3>
-                  </div>
-                </div>
-                <div className="activity-list">
-                  {pendingTasks.slice(0, 4).map((task) => (
-                    <button key={task.id} className="activity-item" onClick={() => setActiveTask(task)}>
-                      <span className={`priority-dot priority-${task.priority}`} />
-                      <div>
-                        <strong>{task.title}</strong>
-                        <p>{task.description || 'No extra detail yet.'}</p>
-                      </div>
-                    </button>
-                  ))}
-                  {!pendingTasks.length ? <p className="muted-copy">No pending tasks right now.</p> : null}
-                </div>
-              </Card>
-
-              <Card className="activity-card">
-                <div className="section-header">
-                  <div>
-                    <p className="eyebrow">Recent wins</p>
-                    <h3>Completed work</h3>
-                  </div>
-                </div>
-                <div className="activity-list">
-                  {completedTasks.slice(0, 4).map((task) => (
-                    <div key={task.id} className="activity-item activity-item-static">
-                      <span className="priority-dot priority-complete" />
-                      <div>
-                        <strong>{task.title}</strong>
-                        <p>Updated {new Date(task.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {!completedTasks.length ? <p className="muted-copy">Completed tasks will show up here.</p> : null}
-                </div>
-              </Card>
-            </section>
+          {loadingMore ? (
+            <div className="rounded-[28px] border border-[var(--border)] bg-[var(--surface-primary)] p-5 text-sm text-[var(--text-secondary)]">
+              Loading more feed items...
+            </div>
           ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 
-          {section === 'tasks' ? (
-            <section className="tasks-section">
-              <Card className="section-card">
-                <div className="section-header">
-                  <div>
-                    <p className="eyebrow">Core workflow</p>
-                    <h2>Plan, prioritize, and complete work without losing context.</h2>
-                  </div>
-                  <Button onClick={() => setShowCreate(true)}>
+  const dashboardContent = (
+    <InsightsPanel
+      tasks={visibleTasks}
+      dueTodayCount={dueTodayCount}
+      urgentCount={urgentCount}
+      onCreateTask={() => setShowCreate(true)}
+      onFilterChange={setFilter}
+    />
+  );
+
+  return (
+    <div className="min-h-screen bg-transparent text-[var(--text-primary)]">
+      <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-[color:color-mix(in_srgb,var(--surface-primary)_82%,transparent)] backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1800px] items-center gap-4 px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-[var(--surface-inverse)] p-2 shadow-[var(--shadow-sm)]">
+              <TaskNotesLogoIcon width={42} height={42} />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold tracking-tight text-[var(--text-primary)]">
+                TaskNotes
+              </p>
+              <p className="truncate text-sm text-[var(--text-secondary)]">{user.name} workspace</p>
+            </div>
+          </div>
+
+          <div className="hidden flex-1 lg:block">
+            <Input
+              label="Quick find"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search tasks, notes, and activity"
+              icon={<SearchIcon width={16} height={16} />}
+              containerClassName="max-w-xl mx-auto"
+              theme={theme}
+            />
+          </div>
+
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <div className="relative">
+              <button
+                className="rounded-2xl border border-[var(--border)] bg-[var(--surface-primary)] p-3 text-[var(--text-secondary)] transition hover:bg-[var(--surface-secondary)] hover:text-[var(--text-primary)]"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setMenuOpen((current) => !current);
+                }}
+                aria-label="Open menu"
+                aria-expanded={menuOpen}
+              >
+                <MenuIcon width={18} height={18} />
+              </button>
+
+              {menuOpen ? (
+                <div
+                  className={cn(
+                    'absolute right-0 top-[calc(100%+0.75rem)] z-40 min-w-[250px] rounded-2xl border border-[var(--border)] bg-[var(--surface-primary)] p-2 shadow-[var(--shadow-lg)]',
+                  )}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShowCreate(true);
+                    }}
+                  >
                     <PlusIcon width={16} height={16} />
                     Add task
-                  </Button>
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setFilter('pending');
+                    }}
+                  >
+                    <SlidersIcon width={16} height={16} />
+                    Focus active work
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onThemeToggle();
+                    }}
+                  >
+                    {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                  </button>
+                  <div className="mx-2 my-2 h-px bg-[var(--border)]" />
+                  <div className="rounded-xl px-3 py-2">
+                    <div className="flex items-center gap-3">
+                      <UserCircleIcon width={18} height={18} className="text-[var(--text-muted)]" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-[var(--text-primary)]">{user.name}</p>
+                        <p className="truncate text-xs text-[var(--text-secondary)]">{user.email ?? 'Local demo user'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    className={cn(
+                      'flex w-full items-center rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]',
+                    )}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void onSignOut();
+                    }}
+                  >
+                    Sign out
+                  </button>
                 </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </header>
 
-                <FilterBar
-                  filter={filter}
-                  counts={counts}
-                  onChange={setFilter}
-                  search={search}
-                  onSearchChange={setSearch}
-                  sort={sort}
-                  onSortChange={setSort}
-                />
+      <div className="mx-auto flex max-w-[1900px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="flex rounded-[24px] border border-[var(--border)] bg-[var(--surface-secondary)] p-1 lg:hidden">
+          {(['feed', 'dashboard'] as const).map((tab) => (
+            <button
+              key={tab}
+              className={cn(
+                'flex-1 rounded-[20px] px-4 py-3 text-sm font-medium transition duration-200',
+                mobileTab === tab ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'text-[var(--text-secondary)]',
+              )}
+              onClick={() => setMobileTab(tab)}
+            >
+              {tab === 'feed' ? 'Feed' : 'Dashboard'}
+            </button>
+          ))}
+        </div>
 
-                <TaskList
-                  tasks={sortedTasks}
-                  filter={filter}
-                  loading={loading}
-                  error={error}
-                  page={page}
-                  totalPages={totalPages}
-                  hasNextPage={hasNextPage}
-                  hasPreviousPage={hasPreviousPage}
-                  onNextPage={goToNextPage}
-                  onPreviousPage={goToPreviousPage}
-                  onToggle={(id, completed) =>
-                    wrapAction(() => toggleTask(id, completed), completed ? 'Task moved back to in progress.' : 'Task completed.', 'We couldn’t update that task.')
-                  }
-                  onDelete={(id) => wrapAction(() => deleteTask(id), 'Task removed.', 'We couldn’t delete that task.')}
-                  onOpen={setActiveTask}
-                  onCreate={() => setShowCreate(true)}
-                />
-              </Card>
-            </section>
-          ) : null}
-
-          {section === 'settings' ? (
-            <section className="settings-grid">
-              <Card className="settings-card">
-                <p className="eyebrow">Profile</p>
-                <h2>{user.name}</h2>
-                <p className="muted-copy">{user.email ?? 'Local demo user'}</p>
-              </Card>
-              <Card className="settings-card">
-                <p className="eyebrow">Theme</p>
-                <h2>{theme === 'dark' ? 'Dark mode' : 'Light mode'}</h2>
-                <p className="muted-copy">Accessible contrast, visible focus states, and consistent elevation across the app shell.</p>
-                <Button variant="secondary" onClick={onThemeToggle}>
-                  Switch theme
-                </Button>
-              </Card>
-              <Card className="settings-card">
-                <p className="eyebrow">Access</p>
-                <h2>{isDemo ? 'Demo mode is active' : 'Live Supabase session'}</h2>
-                <p className="muted-copy">
-                  {isDemo
-                    ? 'You can keep editing local seeded tasks or sign out to try real authentication again.'
-                    : 'Auth and API requests are using the signed-in Supabase session.'}
-                </p>
-              </Card>
-            </section>
-          ) : null}
-        </main>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.9fr)_minmax(280px,0.72fr)]">
+          <div className={cn(mobileTab !== 'feed' && 'hidden lg:block')}>{feedContent}</div>
+          <div className={cn(mobileTab !== 'dashboard' && 'hidden lg:block')}>{dashboardContent}</div>
+        </div>
       </div>
+
+      <nav className="fixed inset-x-4 bottom-4 z-30 flex items-center justify-between rounded-[24px] border border-[var(--border)] bg-[color:color-mix(in_srgb,var(--surface-primary)_92%,transparent)] px-4 py-3 shadow-[var(--shadow-md)] backdrop-blur lg:hidden">
+        <button
+          className={cn(
+            'flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium',
+            mobileTab === 'feed' ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'text-[var(--text-secondary)]',
+          )}
+          onClick={() => setMobileTab('feed')}
+        >
+          <SlidersIcon width={16} height={16} />
+          Feed
+        </button>
+        <button
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--text-inverse)] shadow-[var(--shadow-md)]"
+          onClick={() => setShowCreate(true)}
+          aria-label="Add task"
+        >
+          <PlusIcon width={18} height={18} />
+        </button>
+        <button
+          className={cn(
+            'flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium',
+            mobileTab === 'dashboard' ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'text-[var(--text-secondary)]',
+          )}
+          onClick={() => setMobileTab('dashboard')}
+        >
+          <CalendarDaysIcon width={16} height={16} />
+          Dashboard
+        </button>
+      </nav>
 
       {showCreate ? (
         <CreateTaskModal
           onClose={() => setShowCreate(false)}
-          onCreate={(payload) => wrapAction(() => createTask(payload), 'Task created successfully.', 'We couldn’t create that task.')}
+          theme={theme}
+          onCreate={(payload) =>
+            wrapAction(
+              () => createTask(payload),
+              'Task created successfully.',
+              'We couldn’t create that task.',
+            )
+          }
         />
       ) : null}
 
-      {syncedActiveTask ? (
-        <TaskModal
-          task={syncedActiveTask}
-          onClose={() => setActiveTask(null)}
-          onUpdate={(id, payload) => wrapAction(() => updateTask(id, payload), 'Task updated.', 'We couldn’t save that task.')}
-          onDelete={(id) => wrapAction(() => deleteTask(id), 'Task deleted.', 'We couldn’t delete that task.')}
-          onAddNote={(taskId, payload) => wrapAction(() => addNote(taskId, payload), 'Note added.', 'We couldn’t add that note.')}
-          onDeleteNote={(taskId, noteId) => wrapAction(() => deleteNote(taskId, noteId), 'Note removed.', 'We couldn’t remove that note.')}
-        />
-      ) : null}
-
-      <ToastRegion toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))} />
+      <ToastRegion
+        toasts={toasts}
+        onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))}
+      />
     </div>
   );
 }
 
 export default function App() {
+  const [themePreference, setThemePreference] = useState<'light' | 'dark' | 'system'>(() => {
+    if (typeof window === 'undefined') return 'system';
+    return (window.localStorage.getItem('tasknotes-theme') as 'light' | 'dark' | 'system' | null) ?? 'system';
+  });
   const [session, setSession] = useState<Session | null>(null);
+  const [verifiedUser, setVerifiedUser] = useState<AuthUser | null>(null);
   const [demoUser, setDemoUser] = useState<WorkspaceUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [theme, setTheme] = useState<AppTheme>(() => {
-    if (typeof window === 'undefined') return 'dark';
-    return (window.localStorage.getItem('tasknotes-theme') as AppTheme | null) ?? 'dark';
-  });
+  const [validatingSession, setValidatingSession] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [workspaceUser, setWorkspaceUser] = useState<WorkspaceUser | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'light';
+    const stored = window.localStorage.getItem('tasknotes-theme') as 'light' | 'dark' | 'system' | null;
+    if (stored === 'light' || stored === 'dark') return stored;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem('tasknotes-theme', theme);
   }, [theme]);
 
   useEffect(() => {
-    let mounted = true;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyPreference = () => {
+      setTheme(themePreference === 'system' ? (mediaQuery.matches ? 'dark' : 'light') : themePreference);
+    };
 
+    applyPreference();
+
+    const handleChange = () => {
+      if (themePreference === 'system') {
+        setTheme(mediaQuery.matches ? 'dark' : 'light');
+      }
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    window.localStorage.setItem('tasknotes-theme', themePreference);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange);
+    };
+  }, [themePreference]);
+
+  const handleThemeToggle = () => {
+    setThemePreference((current) => {
+      const resolved = current === 'system'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : current;
+      return resolved === 'dark' ? 'light' : 'dark';
+    });
+  };
+
+  const resetDemoMode = () => {
+    clearDemoUser();
+    setDemoUser(null);
+  };
+
+  useEffect(() => {
     const initialDemoUser = readDemoUser();
     if (initialDemoUser) setDemoUser(initialDemoUser);
 
+    let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
       setSession(data.session);
@@ -456,6 +669,9 @@ export default function App() {
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (nextSession) {
+        resetDemoMode();
+      }
       setSession(nextSession);
       setApiAuthToken(nextSession?.access_token ?? null);
     });
@@ -467,41 +683,114 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const nextUser = demoUser ?? getWorkspaceUser(session);
+    if (!authReady) return;
+
+    if (!session) {
+      setVerifiedUser(null);
+      setValidatingSession(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const verify = async () => {
+      setValidatingSession(true);
+      try {
+        const me = await authApi.getMe();
+        if (cancelled) return;
+        setVerifiedUser(me);
+        resetDemoMode();
+      } catch (error) {
+        if (cancelled) return;
+        setVerifiedUser(null);
+        setToasts((current) => [
+          ...current,
+          createToast('Your session expired. Please sign in again.', 'error'),
+        ]);
+        await supabase.auth.signOut();
+        setSession(null);
+        setApiAuthToken(null);
+      } finally {
+        if (!cancelled) {
+          setValidatingSession(false);
+        }
+      }
+    };
+
+    void verify();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, session]);
+
+  useEffect(() => {
+    const nextUser = getWorkspaceUser(session, verifiedUser) ?? demoUser;
     setWorkspaceUser(nextUser);
     setNeedsOnboarding(nextUser ? !readOnboardingState(nextUser.id) : false);
-  }, [demoUser, session]);
+  }, [demoUser, session, verifiedUser]);
 
-  const handleDemoAccess = () => {
+  useEffect(() => {
+    if (!toasts.length) return;
+    const timeout = window.setTimeout(() => {
+      setToasts((current) => current.slice(1));
+    }, 3200);
+    return () => window.clearTimeout(timeout);
+  }, [toasts]);
+
+  const handleDemoAccess = async () => {
+    await supabase.auth.signOut();
     const nextUser = enableDemoUser();
     setDemoUser(nextUser);
     setSession(null);
+    setVerifiedUser(null);
     setApiAuthToken(null);
   };
 
   const handleSignOut = async () => {
     if (demoUser) {
-      clearDemoUser();
-      setDemoUser(null);
+      resetDemoMode();
     }
 
     await supabase.auth.signOut();
     setSession(null);
+    setVerifiedUser(null);
     setWorkspaceUser(null);
   };
 
-  if (!authReady) {
-    return <div className="boot-screen">Loading workspace...</div>;
+  if (!authReady || validatingSession) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-transparent px-4">
+        <div className="rounded-[32px] border border-[var(--border)] bg-[var(--surface-primary)] px-6 py-5 text-sm text-[var(--text-secondary)] shadow-[var(--shadow-md)]">
+          Loading workspace...
+        </div>
+      </div>
+    );
   }
 
   if (!workspaceUser) {
-    return <AuthScreen onAuthenticated={() => undefined} onDemoAccess={handleDemoAccess} />;
+    return (
+      <>
+        <AuthScreen
+          onAuthenticated={() => undefined}
+          onDemoAccess={handleDemoAccess}
+          theme={theme}
+          onThemeToggle={handleThemeToggle}
+        />
+        <ToastRegion
+          toasts={toasts}
+          onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))}
+        />
+      </>
+    );
   }
 
   if (needsOnboarding) {
     return (
       <OnboardingScreen
         user={workspaceUser}
+        theme={theme}
+        onThemeToggle={handleThemeToggle}
         onComplete={({ name }) => {
           const nextUser = { ...workspaceUser, name };
           setWorkspaceUser(nextUser);
@@ -519,9 +808,12 @@ export default function App() {
   return (
     <Workspace
       user={workspaceUser}
-      theme={theme}
-      onThemeToggle={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
       onSignOut={handleSignOut}
+      theme={theme}
+      onThemeToggle={handleThemeToggle}
+      onSessionError={(message) =>
+        setToasts((current) => [...current, createToast(message, 'error')].slice(-3))
+      }
     />
   );
 }

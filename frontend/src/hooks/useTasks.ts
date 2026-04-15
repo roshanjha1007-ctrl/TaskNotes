@@ -15,19 +15,25 @@ export function useTasks(enabled = true) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(enabled);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalPages, setTotalPages] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPreviousPage, setHasPreviousPage] = useState(false);
   const [counts, setCounts] = useState<TaskCounts>({ all: 0, pending: 0, completed: 0 });
 
-  const load = useCallback(async (f: TaskFilter, query: string, nextPage: number) => {
+  const load = useCallback(async (f: TaskFilter, query: string, nextPage: number, append = false) => {
     if (!enabled) return;
-    setLoading(true);
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
+
     try {
       const response = await tasksApi.getAll(f, query, nextPage);
-      setTasks(response.items);
+      setTasks((current) => (append ? [...current, ...response.items] : response.items));
       setCounts(response.meta.counts);
       setTotalPages(response.meta.totalPages);
       setHasNextPage(response.meta.hasNextPage);
@@ -36,19 +42,24 @@ export function useTasks(enabled = true) {
       const err = e as { message?: string };
       setError(err.message ?? 'Failed to load tasks.');
     } finally {
-      setLoading(false);
+      if (append) {
+        setLoadingMore(false);
+      } else {
+        setLoading(false);
+      }
     }
   }, [enabled]);
 
   useEffect(() => {
     if (!enabled) return;
-    load(filter, search, page);
-  }, [enabled, filter, search, page, load]);
+    setPage(1);
+    load(filter, search, 1, false);
+  }, [enabled, filter, search, load]);
 
   const createTask = async (payload: CreateTaskPayload) => {
     const task = await tasksApi.create(payload);
-    await load(filter, search, 1);
     setPage(1);
+    await load(filter, search, 1, false);
     return task;
   };
 
@@ -60,9 +71,9 @@ export function useTasks(enabled = true) {
 
   const deleteTask = async (id: string) => {
     await tasksApi.delete(id);
-    const nextPage = tasks.length === 1 && page > 1 ? page - 1 : page;
-    await load(filter, search, nextPage);
+    const nextPage = tasks.length === 1 && page > 1 ? page - 1 : 1;
     setPage(nextPage);
+    await load(filter, search, nextPage, false);
   };
 
   const toggleTask = (id: string, completed: boolean) =>
@@ -94,16 +105,21 @@ export function useTasks(enabled = true) {
     },
     search,
     setSearch: (value: string) => {
-      setPage(1);
       setSearch(value);
     },
     page,
     totalPages,
     hasNextPage,
     hasPreviousPage,
-    goToNextPage: () => setPage((current) => current + 1),
+    goToNextPage: async () => {
+      if (!hasNextPage || loadingMore) return;
+      const nextPage = page + 1;
+      setPage(nextPage);
+      await load(filter, search, nextPage, true);
+    },
     goToPreviousPage: () => setPage((current) => Math.max(1, current - 1)),
     loading,
+    loadingMore,
     error,
     counts,
     createTask,

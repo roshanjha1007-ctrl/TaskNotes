@@ -26,6 +26,7 @@ export function useDemoTasks(enabled: boolean, userId: string | null) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(enabled);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [totalPages, setTotalPages] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPreviousPage, setHasPreviousPage] = useState(false);
@@ -47,9 +48,9 @@ export function useDemoTasks(enabled: boolean, userId: string | null) {
     const filtered = filterDemoTasks(allTasks, filter, search);
     const nextTotalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     const safePage = Math.min(page, nextTotalPages);
-    const startIndex = (safePage - 1) * PAGE_SIZE;
+    const visibleCount = safePage * PAGE_SIZE;
 
-    setTasks(filtered.slice(startIndex, startIndex + PAGE_SIZE));
+    setTasks(filtered.slice(0, visibleCount));
     setCounts(nextCounts);
     setTotalPages(nextTotalPages);
     setHasPreviousPage(safePage > 1);
@@ -140,9 +141,15 @@ export function useDemoTasks(enabled: boolean, userId: string | null) {
     totalPages,
     hasNextPage,
     hasPreviousPage,
-    goToNextPage: () => setPage((current) => current + 1),
+    goToNextPage: async () => {
+      if (!hasNextPage) return;
+      setLoadingMore(true);
+      setPage((current) => current + 1);
+      window.setTimeout(() => setLoadingMore(false), 180);
+    },
     goToPreviousPage: () => setPage((current) => Math.max(1, current - 1)),
     loading,
+    loadingMore,
     error: null,
     counts,
     createTask,
