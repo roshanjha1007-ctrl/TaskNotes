@@ -1,4 +1,5 @@
 # TaskNotes
+<<<<<<< HEAD
 
 A production-grade hybrid Task + Notes app built with React, TypeScript, Express, Prisma, and Supabase.
 
@@ -165,3 +166,6 @@ cd frontend && npm run build
 - ✅ Prisma ORM with cascade deletes
 - ✅ Input validation with structured error responses
 - ✅ Dark theme with Syne + DM Mono typography
+=======
+TaskNotes helps you go beyond simple to-do lists. Attach rich notes to any task, mark progress, and filter your work by status so nothing falls through the cracks.
+>>>>>>> 82095854ee0f4ba17e43bf3c54c3bc6bc8ddc2ea
