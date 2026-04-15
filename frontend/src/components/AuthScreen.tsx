@@ -1,25 +1,22 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { DEMO_CREDENTIALS } from '../lib/demo';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
-import { ThemeToggleButton } from './ThemeToggleButton';
 import { Input } from './ui/Input';
 import { EyeIcon, EyeOffIcon, ShieldIcon, TaskNotesLogoIcon } from './ui/Icons';
 import { cn } from '../lib/cn';
+import { RoshanAccessModal } from './RoshanAccessModal';
 
 interface AuthScreenProps {
   onAuthenticated: () => void;
-  onDemoAccess: () => void | Promise<void>;
-  theme: 'light' | 'dark';
-  onThemeToggle: () => void;
+  onRoshanVerified: () => void;
 }
 
 function getFriendlyMessage(message: string) {
   const loweredMessage = message.toLowerCase();
 
   if (loweredMessage.includes('invalid login credentials')) {
-    return `That email and password combination didn’t work. Use the demo account (${DEMO_CREDENTIALS.email}) or create a new workspace.`;
+    return 'That email and password combination didn’t work. Please check your credentials and try again.';
   }
 
   if (
@@ -30,16 +27,20 @@ function getFriendlyMessage(message: string) {
   }
 
   if (loweredMessage.includes('email not confirmed')) {
-    return 'This email is not confirmed yet. Use the demo access option, or confirm the account from your inbox before signing in.';
+    return 'This email is not confirmed yet. Use demo access for now, or confirm the account from your inbox before signing in.';
   }
 
   return message;
 }
 
-export function AuthScreen({ onAuthenticated, onDemoAccess, theme, onThemeToggle }: AuthScreenProps) {
+export function AuthScreen({
+  onAuthenticated,
+  onRoshanVerified,
+}: AuthScreenProps) {
   const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'forgot-password'>('sign-in');
-  const [email, setEmail] = useState(DEMO_CREDENTIALS.email);
-  const [password, setPassword] = useState(DEMO_CREDENTIALS.password);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showRoshanAccess, setShowRoshanAccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,19 +99,7 @@ export function AuthScreen({ onAuthenticated, onDemoAccess, theme, onThemeToggle
         password,
       });
 
-      if (signInError) {
-        const loweredMessage = signInError.message.toLowerCase();
-        const isDemoCredentialAttempt =
-          email.trim().toLowerCase() === DEMO_CREDENTIALS.email &&
-          password === DEMO_CREDENTIALS.password;
-
-        if (isDemoCredentialAttempt && loweredMessage.includes('email not confirmed')) {
-          await onDemoAccess();
-          return;
-        }
-
-        throw signInError;
-      }
+      if (signInError) throw signInError;
       onAuthenticated();
     } catch (err: unknown) {
       const nextError = err as { message?: string };
@@ -127,15 +116,17 @@ export function AuthScreen({ onAuthenticated, onDemoAccess, theme, onThemeToggle
     (mode !== 'forgot-password' && (Boolean(inlineErrors.password) || !password));
 
   return (
-    <div className={cn(
-      'min-h-screen px-4 py-4 sm:px-6 lg:px-8',
-      'bg-transparent text-[var(--text-primary)]',
-    )}>
-      <div className="mx-auto flex max-w-[1800px] justify-end pb-4">
-        <ThemeToggleButton theme={theme} onToggle={onThemeToggle} />
-      </div>
+    <div
+      className={cn(
+        'min-h-screen px-4 py-4 sm:px-6 lg:px-8',
+        'bg-transparent text-[var(--text-primary)]',
+      )}
+    >
       <div className="mx-auto flex min-h-[calc(100vh-5.5rem)] max-w-[760px] items-center justify-center">
-        <Card elevated className="flex w-full flex-col justify-between rounded-[36px] p-6 sm:p-8">
+        <Card
+          elevated
+          className="auth-card relative flex w-full flex-col justify-between overflow-hidden rounded-[36px] p-6 sm:p-8"
+        >
           <div>
             <div className="mb-6 flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -163,7 +154,7 @@ export function AuthScreen({ onAuthenticated, onDemoAccess, theme, onThemeToggle
                 <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
                   {mode === 'forgot-password'
                     ? 'We’ll send recovery instructions to your email.'
-                    : 'Sign in with Supabase auth, or use the seeded demo workspace instantly.'}
+                    : 'Sign in with your account to access your private workspace.'}
                 </p>
               </div>
               <div className="inline-flex items-center gap-2 rounded-full bg-[var(--surface-secondary)] px-3 py-2 text-xs font-semibold whitespace-nowrap text-[var(--text-secondary)]">
@@ -195,7 +186,6 @@ export function AuthScreen({ onAuthenticated, onDemoAccess, theme, onThemeToggle
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@company.com"
                 error={inlineErrors.email ?? null}
-                theme={theme}
               />
 
               {mode !== 'forgot-password' ? (
@@ -264,23 +254,35 @@ export function AuthScreen({ onAuthenticated, onDemoAccess, theme, onThemeToggle
                 </button>
               ) : null}
             </div>
-          </div>
 
-          <div className="mt-8 rounded-[28px] border border-[var(--border)] bg-[var(--surface-secondary)] p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-[var(--text-primary)]">Instant demo access</p>
-                <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--text-secondary)]">
-                  Demo email and password are already filled above. You can sign in directly or open the seeded workspace instantly.
-                </p>
-              </div>
-              <Button variant="secondary" className="self-start lg:self-center" onClick={() => void onDemoAccess()}>
-                Open demo
-              </Button>
+            <div className="mt-8 flex justify-end">
+              <button
+                type="button"
+                className="group inline-flex items-center gap-3 rounded-[20px] border border-[color:color-mix(in_srgb,var(--accent)_34%,var(--border))] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-primary)_92%,transparent),color-mix(in_srgb,var(--surface-secondary)_88%,transparent))] px-3 py-2 pr-4 text-left shadow-[var(--shadow-sm)] transition duration-200 hover:-translate-y-0.5 hover:border-[var(--accent)] hover:shadow-[var(--shadow-md)]"
+                onClick={() => setShowRoshanAccess(true)}
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-[14px] bg-[color:color-mix(in_srgb,var(--accent)_20%,transparent)] text-[var(--accent)] transition group-hover:bg-[color:color-mix(in_srgb,var(--accent)_28%,transparent)]">
+                  R
+                </span>
+                <span className="flex flex-col">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--text-muted)]">
+                    Private Access
+                  </span>
+                  <span className="text-sm font-semibold text-[var(--text-primary)]">
+                    For Roshan
+                  </span>
+                </span>
+              </button>
             </div>
           </div>
         </Card>
       </div>
+      {showRoshanAccess ? (
+        <RoshanAccessModal
+          onClose={() => setShowRoshanAccess(false)}
+          onVerified={onRoshanVerified}
+        />
+      ) : null}
     </div>
   );
 }

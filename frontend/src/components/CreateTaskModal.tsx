@@ -7,10 +7,9 @@ import { Input, Textarea } from './ui/Input';
 interface CreateTaskModalProps {
   onClose: () => void;
   onCreate: (payload: CreateTaskPayload) => Promise<unknown>;
-  theme?: 'light' | 'dark';
 }
 
-export function CreateTaskModal({ onClose, onCreate, theme = 'light' }: CreateTaskModalProps) {
+export function CreateTaskModal({ onClose, onCreate }: CreateTaskModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('medium');
@@ -82,14 +81,12 @@ export function CreateTaskModal({ onClose, onCreate, theme = 'light' }: CreateTa
           <Input
             ref={inputRef}
             label="Title"
-            theme={theme}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="What should happen next?"
           />
           <Textarea
             label="Description"
-            theme={theme}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             rows={4}
@@ -114,7 +111,6 @@ export function CreateTaskModal({ onClose, onCreate, theme = 'light' }: CreateTa
 
               <Input
                 label="Due date"
-                theme={theme}
                 type="date"
               value={dueDate}
               onChange={(event) => setDueDate(event.target.value)}

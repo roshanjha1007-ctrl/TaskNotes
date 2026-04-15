@@ -2,18 +2,15 @@ import { FormEvent, useState } from 'react';
 import { WorkspaceUser } from '../types';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
-import { ThemeToggleButton } from './ThemeToggleButton';
 import { Input } from './ui/Input';
 import { TaskNotesLogoIcon } from './ui/Icons';
 
 interface OnboardingScreenProps {
   user: WorkspaceUser;
   onComplete: (profile: { name: string; focus: string }) => void;
-  theme: 'light' | 'dark';
-  onThemeToggle: () => void;
 }
 
-export function OnboardingScreen({ user, onComplete, theme, onThemeToggle }: OnboardingScreenProps) {
+export function OnboardingScreen({ user, onComplete }: OnboardingScreenProps) {
   const [name, setName] = useState(user.name === 'Product Demo' ? 'Avery' : user.name);
   const [focus, setFocus] = useState('Ship this week’s most important tasks');
 
@@ -27,9 +24,6 @@ export function OnboardingScreen({ user, onComplete, theme, onThemeToggle }: Onb
 
   return (
     <div className="min-h-screen bg-transparent px-4 py-4 text-[var(--text-primary)]">
-      <div className="mx-auto flex max-w-[1800px] justify-end pb-4">
-        <ThemeToggleButton theme={theme} onToggle={onThemeToggle} />
-      </div>
       <div className="flex min-h-[calc(100vh-5.5rem)] items-center justify-center">
         <Card elevated className="w-full max-w-3xl rounded-[36px] p-6 sm:p-8">
           <div className="mb-8 flex h-20 w-20 items-center justify-center rounded-[28px] bg-[var(--surface-inverse)] p-2.5 text-[var(--text-inverse)] shadow-[var(--shadow-md)]">
@@ -51,7 +45,6 @@ export function OnboardingScreen({ user, onComplete, theme, onThemeToggle }: Onb
               onChange={(event) => setName(event.target.value)}
               placeholder="Your name"
               required
-              theme={theme}
             />
             <Input
               label="What is this workspace mainly for?"
@@ -59,7 +52,6 @@ export function OnboardingScreen({ user, onComplete, theme, onThemeToggle }: Onb
               onChange={(event) => setFocus(event.target.value)}
               placeholder="Example: Run launch readiness and follow-ups"
               required
-              theme={theme}
             />
             <Button type="submit" size="lg" fullWidth>
               Enter workspace

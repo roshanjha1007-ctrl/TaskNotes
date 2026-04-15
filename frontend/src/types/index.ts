@@ -68,12 +68,19 @@ export interface TaskListResponse {
 export interface AuthUser {
   id: string;
   email: string | null;
+  isOwner: boolean;
+}
+
+export interface RoshanSession {
+  token: string;
+  expiresAt: string;
 }
 
 export interface WorkspaceUser {
   id: string;
   email: string | null;
   name: string;
+  isOwner: boolean;
   mode: 'live' | 'demo';
 }
 

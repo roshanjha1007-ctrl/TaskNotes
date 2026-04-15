@@ -8,7 +8,6 @@ import { cn } from '../lib/cn';
 
 interface TaskFeedCardProps {
   task: Task;
-  theme: 'light' | 'dark';
   expanded: boolean;
   onToggleExpand: (taskId: string) => void;
   onToggleStatus: (id: string, completed: boolean) => Promise<unknown>;
@@ -36,7 +35,6 @@ const priorityTheme: Record<TaskPriority, string> = {
 
 export function TaskFeedCard({
   task,
-  theme,
   expanded,
   onToggleExpand,
   onToggleStatus,
@@ -216,7 +214,6 @@ export function TaskFeedCard({
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="Task title"
-              theme={theme}
             />
             <Textarea
               label="Description"
@@ -224,7 +221,6 @@ export function TaskFeedCard({
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Add more context or acceptance criteria."
-              theme={theme}
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -248,7 +244,6 @@ export function TaskFeedCard({
                 type="date"
                 value={dueDate}
                 onChange={(event) => setDueDate(event.target.value)}
-                theme={theme}
               />
             </div>
 
@@ -301,7 +296,6 @@ export function TaskFeedCard({
                 value={noteContent}
                 onChange={(event) => setNoteContent(event.target.value)}
                 placeholder="Write a short update."
-                theme={theme}
               />
               <Button variant="secondary" onClick={() => void handleAddNote()} disabled={addingNote || !noteContent.trim()}>
                 {addingNote ? 'Adding...' : 'Add note'}

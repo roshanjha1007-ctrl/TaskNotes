@@ -31,6 +31,7 @@ export const DEMO_USER: WorkspaceUser = {
   id: 'demo-user',
   email: DEMO_CREDENTIALS.email,
   name: 'Product Demo',
+  isOwner: false,
   mode: 'demo',
 };
 

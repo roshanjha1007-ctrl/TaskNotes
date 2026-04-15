@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import path from 'path';
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -6,10 +7,15 @@ import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 
 import authRoutes from './routes/auth.routes';
+import roshanRoutes from './routes/roshan.routes';
 import taskRoutes from './routes/task.routes';
 import { errorHandler } from './middleware/errorHandler';
 import { AppError } from './middleware/errorHandler';
 import { requestContext } from './middleware/requestContext';
+
+dotenv.config({
+  path: path.resolve(__dirname, '../.env'),
+});
 
 const app = express();
 const PORT = process.env.PORT ?? 4000;
@@ -44,6 +50,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/auth', authRoutes);
+app.use('/api', roshanRoutes);
 app.use('/tasks', taskRoutes);
 
 // 404 catch-all

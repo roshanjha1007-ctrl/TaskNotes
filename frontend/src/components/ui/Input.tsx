@@ -12,14 +12,13 @@ interface BaseFieldProps {
   error?: string | null;
   icon?: ReactNode;
   containerClassName?: string;
-  theme?: 'light' | 'dark';
 }
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement>, BaseFieldProps {}
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement>, BaseFieldProps {}
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, hint, error, icon, className = '', containerClassName = '', theme = 'light', ...props },
+  { label, hint, error, icon, className = '', containerClassName = '', ...props },
   ref,
 ) {
   return (
@@ -56,7 +55,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
 });
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { label, hint, error, icon, className = '', containerClassName = '', theme = 'light', ...props },
+  { label, hint, error, icon, className = '', containerClassName = '', ...props },
   ref,
 ) {
   return (

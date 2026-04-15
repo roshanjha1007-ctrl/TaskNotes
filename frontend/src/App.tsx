@@ -6,16 +6,17 @@ import { useDemoTasks } from './hooks/useDemoTasks';
 import { useTasks } from './hooks/useTasks';
 import {
   clearDemoUser,
-  enableDemoUser,
   readDemoUser,
   readOnboardingState,
   writeOnboardingState,
 } from './lib/demo';
+import { clearRoshanSession, hasValidRoshanSession, readRoshanSession } from './lib/roshan';
 import { supabase } from './lib/supabase';
 import { AuthScreen } from './components/AuthScreen';
 import { CreateTaskModal } from './components/CreateTaskModal';
 import { InsightsPanel } from './components/InsightsPanel';
 import { OnboardingScreen } from './components/OnboardingScreen';
+import { RoshanDashboard } from './components/RoshanDashboard';
 import { TaskFeedCard } from './components/TaskFeedCard';
 import { Button } from './components/ui/Button';
 import { Card } from './components/ui/Card';
@@ -33,7 +34,15 @@ import { Input } from './components/ui/Input';
 import { cn } from './lib/cn';
 import { AuthUser, Task, TaskFilter, TaskSort, WorkspaceUser } from './types';
 
-type WorkspaceTab = 'feed' | 'dashboard';
+type WorkspaceTab = 'feed' | 'dashboard' | 'roshan';
+
+const TASK_MOTIVATION_QUOTES = [
+  'Training arc active. One more task is on the board.',
+  'Main-character energy unlocked. Keep the momentum going.',
+  'Small progress still changes the whole story.',
+  'This is the comeback arc. Keep stacking wins.',
+  'Even a single finished step can shift the day.',
+];
 
 function createToast(title: string, tone: ToastMessage['tone'] = 'info'): ToastMessage {
   return {
@@ -41,6 +50,12 @@ function createToast(title: string, tone: ToastMessage['tone'] = 'info'): ToastM
     title,
     tone,
   };
+}
+
+function getTaskMotivationToast() {
+  const quote =
+    TASK_MOTIVATION_QUOTES[Math.floor(Math.random() * TASK_MOTIVATION_QUOTES.length)];
+  return createToast(quote, 'success');
 }
 
 function getPriorityWeight(priority: Task['priority']) {
@@ -78,8 +93,71 @@ function getWorkspaceUser(session: Session | null, authUser: AuthUser | null): W
     id: authUser?.id ?? session.user.id,
     email,
     name: email?.split('@')[0] ?? 'Teammate',
+    isOwner: authUser?.isOwner ?? false,
     mode: 'live',
   };
+}
+
+function getCurrentPath() {
+  if (typeof window === 'undefined') return '/';
+  return window.location.pathname || '/';
+}
+
+function navigateTo(path: string, replace = false) {
+  const method = replace ? 'replaceState' : 'pushState';
+  window.history[method](window.history.state, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+function RoshanAccessPanel({
+  user,
+  onCreateTask,
+}: {
+  user: WorkspaceUser;
+  onCreateTask: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <Card elevated className="rounded-[32px] p-6 sm:p-7">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
+          Private space
+        </p>
+        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text-primary)]">
+          For Roshan
+        </h2>
+        <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--text-secondary)] sm:text-base">
+          This tab is reserved for the owner account only. It is verified from the authenticated
+          email on the backend before the UI exposes it.
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Button onClick={onCreateTask}>
+            <PlusIcon width={16} height={16} />
+            Add task
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="rounded-[30px] p-6">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--text-muted)]">
+          Owner details
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface-secondary)] p-4">
+            <p className="text-sm text-[var(--text-secondary)]">Signed in as</p>
+            <p className="mt-2 text-lg font-semibold text-[var(--text-primary)]">{user.name}</p>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">{user.email}</p>
+          </div>
+          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface-secondary)] p-4">
+            <p className="text-sm text-[var(--text-secondary)]">Access level</p>
+            <p className="mt-2 text-lg font-semibold text-[var(--text-primary)]">Owner-only</p>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              Hidden for every other authenticated user.
+            </p>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 function TaskFeedSkeleton() {
@@ -112,19 +190,14 @@ function Workspace({
   user,
   onSignOut,
   onSessionError,
-  theme,
-  onThemeToggle,
 }: {
   user: WorkspaceUser;
   onSignOut: () => Promise<void>;
   onSessionError: (message: string) => void;
-  theme: 'light' | 'dark';
-  onThemeToggle: () => void;
 }) {
-  const isDemo = user.mode === 'demo';
-  const liveTasks = useTasks(!isDemo);
-  const demoTasks = useDemoTasks(isDemo, user.id);
-  const taskSource = isDemo ? demoTasks : liveTasks;
+  const isLiveUser = user.mode === 'live';
+  const demoTasks = useDemoTasks(!isLiveUser, user.mode === 'demo' ? user.id : null);
+  const liveTasks = useTasks(isLiveUser);
   const {
     tasks,
     filter,
@@ -143,7 +216,7 @@ function Workspace({
     deleteNote,
     hasNextPage,
     goToNextPage,
-  } = taskSource;
+  } = isLiveUser ? liveTasks : demoTasks;
   const [showCreate, setShowCreate] = useState(false);
   const [sort, setSort] = useState<TaskSort>('newest');
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
@@ -152,7 +225,7 @@ function Workspace({
   const [menuOpen, setMenuOpen] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  const visibleTasks = useMemo(() => sortTasks(tasks, sort), [sort, tasks]);
+  const visibleTasks = useMemo(() => (isLiveUser ? sortTasks(tasks, sort) : []), [isLiveUser, sort, tasks]);
   const pendingTasks = useMemo(() => visibleTasks.filter((task) => !task.completed), [visibleTasks]);
   const dueTodayCount = useMemo(
     () =>
@@ -253,7 +326,7 @@ function Workspace({
   };
 
   const feedContent = (
-    <div className="space-y-5">
+    <div className="mx-auto w-full max-w-[1200px] space-y-5">
       <div className="flex flex-col gap-4 rounded-[30px] border border-[var(--border)] bg-[var(--surface-secondary)] p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
@@ -273,7 +346,6 @@ function Workspace({
               placeholder="Search titles, notes, and descriptions"
               icon={<SearchIcon width={16} height={16} />}
               containerClassName="min-w-0"
-              theme={theme}
             />
 
             <label className="grid gap-2">
@@ -363,7 +435,6 @@ function Workspace({
             <TaskFeedCard
               key={task.id}
               task={task}
-              theme={theme}
               expanded={expandedTaskId === task.id}
               onToggleExpand={(taskId) =>
                 setExpandedTaskId((current) => (current === taskId ? null : taskId))
@@ -408,13 +479,19 @@ function Workspace({
 
   const dashboardContent = (
     <InsightsPanel
+      checkInStorageKey={`tasknotes-monthly-checkins-${user.id}`}
       tasks={visibleTasks}
       dueTodayCount={dueTodayCount}
       urgentCount={urgentCount}
       onCreateTask={() => setShowCreate(true)}
       onFilterChange={setFilter}
+      onNotify={(message, tone = 'info') => pushToast(createToast(message, tone))}
     />
   );
+
+  const roshanContent = user.isOwner ? (
+    <RoshanAccessPanel user={user} onCreateTask={() => setShowCreate(true)} />
+  ) : null;
 
   return (
     <div className="min-h-screen bg-transparent text-[var(--text-primary)]">
@@ -440,7 +517,6 @@ function Workspace({
               placeholder="Search tasks, notes, and activity"
               icon={<SearchIcon width={16} height={16} />}
               containerClassName="max-w-xl mx-auto"
-              theme={theme}
             />
           </div>
 
@@ -465,42 +541,50 @@ function Workspace({
                   )}
                   onClick={(event) => event.stopPropagation()}
                 >
-                  <button
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setShowCreate(true);
-                    }}
-                  >
-                    <PlusIcon width={16} height={16} />
-                    Add task
-                  </button>
-                  <button
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setFilter('pending');
-                    }}
-                  >
-                    <SlidersIcon width={16} height={16} />
-                    Focus active work
-                  </button>
-                  <button
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onThemeToggle();
-                    }}
-                  >
-                    {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-                  </button>
+                  {isLiveUser ? (
+                    <button
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setShowCreate(true);
+                      }}
+                    >
+                      <PlusIcon width={16} height={16} />
+                      Add task
+                    </button>
+                  ) : null}
+                  {isLiveUser ? (
+                    <button
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setFilter('pending');
+                        setMobileTab('feed');
+                      }}
+                    >
+                      <SlidersIcon width={16} height={16} />
+                      Focus active work
+                    </button>
+                  ) : null}
+                  {user.isOwner ? (
+                    <button
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-secondary)]"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setMobileTab('roshan');
+                      }}
+                    >
+                      <UserCircleIcon width={16} height={16} />
+                      For Roshan
+                    </button>
+                  ) : null}
                   <div className="mx-2 my-2 h-px bg-[var(--border)]" />
                   <div className="rounded-xl px-3 py-2">
                     <div className="flex items-center gap-3">
                       <UserCircleIcon width={18} height={18} className="text-[var(--text-muted)]" />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-[var(--text-primary)]">{user.name}</p>
-                        <p className="truncate text-xs text-[var(--text-secondary)]">{user.email ?? 'Local demo user'}</p>
+                        <p className="truncate text-xs text-[var(--text-secondary)]">{user.email ?? 'Signed in user'}</p>
                       </div>
                     </div>
                   </div>
@@ -522,26 +606,28 @@ function Workspace({
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-[1900px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex rounded-[24px] border border-[var(--border)] bg-[var(--surface-secondary)] p-1 lg:hidden">
-          {(['feed', 'dashboard'] as const).map((tab) => (
-            <button
-              key={tab}
+      <div className="flex w-full flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
+        {mobileTab === 'roshan' ? (
+          roshanContent
+        ) : (
+          <div className="flex flex-col gap-8">
+            <div
               className={cn(
-                'flex-1 rounded-[20px] px-4 py-3 text-sm font-medium transition duration-200',
-                mobileTab === tab ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'text-[var(--text-secondary)]',
+                mobileTab !== 'feed' && 'hidden lg:block',
               )}
-              onClick={() => setMobileTab(tab)}
             >
-              {tab === 'feed' ? 'Feed' : 'Dashboard'}
-            </button>
-          ))}
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.9fr)_minmax(280px,0.72fr)]">
-          <div className={cn(mobileTab !== 'feed' && 'hidden lg:block')}>{feedContent}</div>
-          <div className={cn(mobileTab !== 'dashboard' && 'hidden lg:block')}>{dashboardContent}</div>
-        </div>
+              {feedContent}
+            </div>
+            <div
+              className={cn(
+                'border-t border-[var(--border)] pt-8',
+                mobileTab !== 'dashboard' && 'hidden lg:block',
+              )}
+            >
+              {dashboardContent}
+            </div>
+          </div>
+        )}
       </div>
 
       <nav className="fixed inset-x-4 bottom-4 z-30 flex items-center justify-between rounded-[24px] border border-[var(--border)] bg-[color:color-mix(in_srgb,var(--surface-primary)_92%,transparent)] px-4 py-3 shadow-[var(--shadow-md)] backdrop-blur lg:hidden">
@@ -562,28 +648,41 @@ function Workspace({
         >
           <PlusIcon width={18} height={18} />
         </button>
-        <button
-          className={cn(
-            'flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium',
-            mobileTab === 'dashboard' ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'text-[var(--text-secondary)]',
-          )}
-          onClick={() => setMobileTab('dashboard')}
-        >
-          <CalendarDaysIcon width={16} height={16} />
-          Dashboard
-        </button>
+        {user.isOwner && mobileTab === 'roshan' ? (
+          <button
+            className="flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--text-inverse)]"
+            onClick={() => setMobileTab('roshan')}
+          >
+            <UserCircleIcon width={16} height={16} />
+            Roshan
+          </button>
+        ) : (
+          <button
+            className={cn(
+              'flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium',
+              mobileTab === 'dashboard' ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'text-[var(--text-secondary)]',
+            )}
+            onClick={() => setMobileTab('dashboard')}
+          >
+            <CalendarDaysIcon width={16} height={16} />
+            Dashboard
+          </button>
+        )}
       </nav>
 
-      {showCreate ? (
+      {showCreate && isLiveUser ? (
         <CreateTaskModal
           onClose={() => setShowCreate(false)}
-          theme={theme}
           onCreate={(payload) =>
-            wrapAction(
-              () => createTask(payload),
-              'Task created successfully.',
-              'We couldn’t create that task.',
-            )
+            (async () => {
+              const result = await wrapAction(
+                () => createTask(payload),
+                'Task created successfully.',
+                'We couldn’t create that task.',
+              );
+              pushToast(getTaskMotivationToast());
+              return result;
+            })()
           }
         />
       ) : null}
@@ -597,68 +696,26 @@ function Workspace({
 }
 
 export default function App() {
-  const [themePreference, setThemePreference] = useState<'light' | 'dark' | 'system'>(() => {
-    if (typeof window === 'undefined') return 'system';
-    return (window.localStorage.getItem('tasknotes-theme') as 'light' | 'dark' | 'system' | null) ?? 'system';
-  });
   const [session, setSession] = useState<Session | null>(null);
   const [verifiedUser, setVerifiedUser] = useState<AuthUser | null>(null);
   const [demoUser, setDemoUser] = useState<WorkspaceUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [validatingSession, setValidatingSession] = useState(false);
+  const [validatingRoshan, setValidatingRoshan] = useState(() => getCurrentPath() === '/roshan-dashboard');
+  const [roshanAuthorized, setRoshanAuthorized] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [workspaceUser, setWorkspaceUser] = useState<WorkspaceUser | null>(null);
+  const [currentPath, setCurrentPath] = useState(getCurrentPath);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window === 'undefined') return 'light';
-    const stored = window.localStorage.getItem('tasknotes-theme') as 'light' | 'dark' | 'system' | null;
-    if (stored === 'light' || stored === 'dark') return stored;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  });
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    const syncPath = () => setCurrentPath(getCurrentPath());
+    window.addEventListener('popstate', syncPath);
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const applyPreference = () => {
-      setTheme(themePreference === 'system' ? (mediaQuery.matches ? 'dark' : 'light') : themePreference);
-    };
-
-    applyPreference();
-
-    const handleChange = () => {
-      if (themePreference === 'system') {
-        setTheme(mediaQuery.matches ? 'dark' : 'light');
-      }
-    };
-
-    mediaQuery.addEventListener('change', handleChange);
-    window.localStorage.setItem('tasknotes-theme', themePreference);
-
-    return () => {
-      mediaQuery.removeEventListener('change', handleChange);
-    };
-  }, [themePreference]);
-
-  const handleThemeToggle = () => {
-    setThemePreference((current) => {
-      const resolved = current === 'system'
-        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-        : current;
-      return resolved === 'dark' ? 'light' : 'dark';
-    });
-  };
-
-  const resetDemoMode = () => {
-    clearDemoUser();
-    setDemoUser(null);
-  };
-
-  useEffect(() => {
     const initialDemoUser = readDemoUser();
-    if (initialDemoUser) setDemoUser(initialDemoUser);
+    if (initialDemoUser) {
+      setDemoUser(initialDemoUser);
+    }
 
     let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
@@ -670,7 +727,8 @@ export default function App() {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (nextSession) {
-        resetDemoMode();
+        clearDemoUser();
+        setDemoUser(null);
       }
       setSession(nextSession);
       setApiAuthToken(nextSession?.access_token ?? null);
@@ -678,6 +736,7 @@ export default function App() {
 
     return () => {
       mounted = false;
+      window.removeEventListener('popstate', syncPath);
       listener.subscription.unsubscribe();
     };
   }, []);
@@ -699,7 +758,6 @@ export default function App() {
         const me = await authApi.getMe();
         if (cancelled) return;
         setVerifiedUser(me);
-        resetDemoMode();
       } catch (error) {
         if (cancelled) return;
         setVerifiedUser(null);
@@ -738,25 +796,89 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [toasts]);
 
-  const handleDemoAccess = async () => {
-    await supabase.auth.signOut();
-    const nextUser = enableDemoUser();
-    setDemoUser(nextUser);
-    setSession(null);
-    setVerifiedUser(null);
-    setApiAuthToken(null);
+  useEffect(() => {
+    if (currentPath !== '/roshan-dashboard') {
+      setValidatingRoshan(false);
+      setRoshanAuthorized(false);
+      return;
+    }
+
+    const currentSession = readRoshanSession();
+    if (!hasValidRoshanSession(currentSession)) {
+      clearRoshanSession();
+      setValidatingRoshan(false);
+      setRoshanAuthorized(false);
+      navigateTo('/', true);
+      return;
+    }
+    setRoshanAuthorized(true);
+    setValidatingRoshan(false);
+  }, [currentPath]);
+
+  const handleRoshanVerified = () => {
+    setRoshanAuthorized(true);
+    navigateTo('/roshan-dashboard');
+  };
+
+  const handleExitRoshan = () => {
+    clearRoshanSession();
+    setRoshanAuthorized(false);
+    navigateTo('/', true);
   };
 
   const handleSignOut = async () => {
-    if (demoUser) {
-      resetDemoMode();
-    }
-
+    clearDemoUser();
+    setDemoUser(null);
     await supabase.auth.signOut();
     setSession(null);
     setVerifiedUser(null);
     setWorkspaceUser(null);
   };
+
+  if (currentPath === '/roshan-dashboard') {
+    if (validatingRoshan) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-transparent px-4">
+          <div className="rounded-[32px] border border-[var(--border)] bg-[var(--surface-primary)] px-6 py-5 text-sm text-[var(--text-secondary)] shadow-[var(--shadow-md)]">
+            Verifying Roshan access...
+          </div>
+          <ToastRegion
+            toasts={toasts}
+            onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))}
+          />
+        </div>
+      );
+    }
+
+    if (!roshanAuthorized) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-transparent px-4">
+          <div className="rounded-[32px] border border-[var(--border)] bg-[var(--surface-primary)] px-6 py-5 text-sm text-[var(--text-secondary)] shadow-[var(--shadow-md)]">
+            Redirecting to sign in...
+          </div>
+          <ToastRegion
+            toasts={toasts}
+            onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <RoshanDashboard
+          onExit={handleExitRoshan}
+          onNotify={(message, tone = 'info') =>
+            setToasts((current) => [...current, createToast(message, tone)].slice(-3))
+          }
+        />
+        <ToastRegion
+          toasts={toasts}
+          onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))}
+        />
+      </>
+    );
+  }
 
   if (!authReady || validatingSession) {
     return (
@@ -773,9 +895,7 @@ export default function App() {
       <>
         <AuthScreen
           onAuthenticated={() => undefined}
-          onDemoAccess={handleDemoAccess}
-          theme={theme}
-          onThemeToggle={handleThemeToggle}
+          onRoshanVerified={handleRoshanVerified}
         />
         <ToastRegion
           toasts={toasts}
@@ -789,8 +909,6 @@ export default function App() {
     return (
       <OnboardingScreen
         user={workspaceUser}
-        theme={theme}
-        onThemeToggle={handleThemeToggle}
         onComplete={({ name }) => {
           const nextUser = { ...workspaceUser, name };
           setWorkspaceUser(nextUser);
@@ -809,8 +927,6 @@ export default function App() {
     <Workspace
       user={workspaceUser}
       onSignOut={handleSignOut}
-      theme={theme}
-      onThemeToggle={handleThemeToggle}
       onSessionError={(message) =>
         setToasts((current) => [...current, createToast(message, 'error')].slice(-3))
       }

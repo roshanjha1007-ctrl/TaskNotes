@@ -15,6 +15,7 @@ This project was originally made for fun and for personal use. Feel free to expl
 
 - Email/password authentication with Supabase
 - Private user-scoped tasks and notes
+- Owner-only `For Roshan` tab, verified from the backend
 - Create, edit, complete, and delete tasks
 - Inline notes on tasks
 - Search, filters, and feed-based task flow
@@ -63,6 +64,7 @@ Set these env vars before running the app:
 - `DATABASE_URL`
 - `DIRECT_URL`
 - `SUPABASE_URL`
+- `OWNER_EMAIL`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
