@@ -1,5 +1,4 @@
 # TaskNotes
-<<<<<<< HEAD
 
 A production-grade hybrid Task + Notes app built with React, TypeScript, Express, Prisma, and Supabase.
 
@@ -7,7 +6,7 @@ A production-grade hybrid Task + Notes app built with React, TypeScript, Express
 
 ## Architecture
 
-```
+```text
 tasknotes/
 ├── backend/          # Node.js + Express + TypeScript + Prisma
 │   ├── prisma/
@@ -43,31 +42,31 @@ tasknotes/
 
 ## REST API
 
-| Method | Endpoint               | Description          |
-|--------|------------------------|----------------------|
-| GET    | /auth/me               | Get current user     |
-| POST   | /tasks                 | Create a task        |
-| GET    | /tasks?status=pending  | List tasks (filterable) |
-| GET    | /tasks/:id             | Get task by ID       |
-| PUT    | /tasks/:id             | Update task          |
-| DELETE | /tasks/:id             | Delete task          |
-| POST   | /tasks/:id/notes       | Add note to task     |
-| DELETE | /tasks/:id/notes/:noteId | Remove note        |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /auth/me | Get current user |
+| POST | /tasks | Create a task |
+| GET | /tasks?status=pending | List tasks (filterable) |
+| GET | /tasks/:id | Get task by ID |
+| PUT | /tasks/:id | Update task |
+| DELETE | /tasks/:id | Delete task |
+| POST | /tasks/:id/notes | Add note to task |
+| DELETE | /tasks/:id/notes/:noteId | Remove note |
 
 ---
 
 ## Supabase Setup
 
-1. Go to [supabase.com](https://supabase.com) and create a new project.
-2. Once created, navigate to **Project Settings → Database**.
-3. Copy the direct connection string (port `5432`) for `DATABASE_URL`.
-4. Copy the same direct connection string or a dedicated direct URL for `DIRECT_URL` (used by Prisma migrations).
-5. Navigate to **Project Settings → API** and copy:
+1. Create a project at [supabase.com](https://supabase.com).
+2. In **Project Settings → Database**, copy:
+   - the direct connection string for `DATABASE_URL`
+   - the direct connection string or dedicated direct URL for `DIRECT_URL`
+3. In **Project Settings → API**, copy:
    - `Project URL` for `SUPABASE_URL` and `VITE_SUPABASE_URL`
    - `anon public` key for `VITE_SUPABASE_ANON_KEY`
-6. This app talks to your hosted Supabase Postgres database through Prisma. It does not require a local Supabase project or `supabase start`.
+4. This app uses your hosted Supabase Postgres database through Prisma. It does not require `supabase start`.
 
-Update `backend/prisma/schema.prisma` to use `directUrl` for migrations:
+Prisma datasource:
 
 ```prisma
 datasource db {
@@ -79,58 +78,35 @@ datasource db {
 
 ---
 
-## Local Development Setup
+## Local Development
 
-### Quick Start From The Parent Folder
+### Quick Start
 
 ```bash
-# From the repo root
 npm run setup
 npm run dev
 ```
 
-This installs backend and frontend dependencies, generates the Prisma client, runs the initial migration against your hosted Supabase database, and then starts both apps.
 Before the frontend auth flow will work, replace `VITE_SUPABASE_ANON_KEY` in `frontend/.env` with your real Supabase anon key.
 
-### 1. Backend
+### Backend
 
 ```bash
 cd backend
-
-# Install dependencies
 npm install
-
-# Copy and fill in env
 cp .env.example .env
-# Edit .env — add your hosted Supabase DATABASE_URL, DIRECT_URL, and SUPABASE_URL
-
-# Generate Prisma client
 npm run prisma:generate
-
-# Run migrations (creates tables in your hosted Supabase database)
 npm run prisma:migrate
-
-# Start dev server (hot reload)
 npm run dev
-# → API running on http://localhost:4000
 ```
 
-### 2. Frontend
+### Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Copy env
 cp .env.example .env
-# Set VITE_SUPABASE_ANON_KEY from Supabase Project Settings → API
-# VITE_API_BASE_URL=http://localhost:4000 is usually fine locally
-
-# Start dev server
 npm run dev
-# → App running on http://localhost:5173
 ```
 
 ---
@@ -138,34 +114,18 @@ npm run dev
 ## Production Build
 
 ```bash
-# Backend
-cd backend && npm run build
-node dist/index.js
-
-# Frontend
-cd frontend && npm run build
-# Serve dist/ with any static file host (Vercel, Netlify, etc.)
+npm run build
 ```
 
 ---
 
 ## Features
 
-- ✅ Supabase email/password authentication
-- ✅ User-owned private tasks
-- ✅ Protected backend task routes with JWT verification
-- ✅ Search and pagination
-- ✅ Request IDs and rate limiting
-- ✅ Create, edit, delete tasks
-- ✅ Attach multiple notes to each task
-- ✅ Mark tasks complete / pending with one click
-- ✅ Filter by All / Pending / Completed
-- ✅ Inline task editing in detail modal
-- ✅ Skeleton loading states
-- ✅ Full TypeScript throughout
-- ✅ Prisma ORM with cascade deletes
-- ✅ Input validation with structured error responses
-- ✅ Dark theme with Syne + DM Mono typography
-=======
-TaskNotes helps you go beyond simple to-do lists. Attach rich notes to any task, mark progress, and filter your work by status so nothing falls through the cracks.
->>>>>>> 82095854ee0f4ba17e43bf3c54c3bc6bc8ddc2ea
+- Supabase email/password authentication
+- User-owned private tasks
+- Protected backend task routes with JWT verification
+- Search and pagination
+- Request IDs and rate limiting
+- Create, edit, delete tasks
+- Attach multiple notes to each task
+- Mark tasks complete or pending
