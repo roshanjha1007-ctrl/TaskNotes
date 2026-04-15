@@ -2,14 +2,14 @@
 
 TaskNotes is a lightweight personal productivity app for managing tasks, notes, and daily workflow in one place.
 
-I originally made this for fun and for my own personal use. Feel free to explore it, customize it, and adapt it for your own workflow.
+This project was originally made for fun and for personal use. Feel free to explore it, customize it, and adapt it to your own workflow.
 
-## Stack
+## Tech Stack
 
-- React + TypeScript + Vite
-- Express + TypeScript
-- Prisma
-- Supabase Auth + Postgres
+- Frontend: React, TypeScript, Vite, Tailwind CSS
+- Backend: Node.js, Express, TypeScript
+- Database ORM: Prisma
+- Auth and database: Supabase Auth, Supabase Postgres
 
 ## Features
 
