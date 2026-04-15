@@ -9,12 +9,12 @@ import {
   CreateNotePayload,
 } from '../types';
 
-export function useTasks() {
+export function useTasks(enabled = true) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [filter, setFilter] = useState<TaskFilter>('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [totalPages, setTotalPages] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -22,6 +22,7 @@ export function useTasks() {
   const [counts, setCounts] = useState<TaskCounts>({ all: 0, pending: 0, completed: 0 });
 
   const load = useCallback(async (f: TaskFilter, query: string, nextPage: number) => {
+    if (!enabled) return;
     setLoading(true);
     setError(null);
     try {
@@ -37,11 +38,12 @@ export function useTasks() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     load(filter, search, page);
-  }, [filter, search, page, load]);
+  }, [enabled, filter, search, page, load]);
 
   const createTask = async (payload: CreateTaskPayload) => {
     const task = await tasksApi.create(payload);

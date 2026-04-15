@@ -11,21 +11,29 @@ export interface Task {
   userId: string | null;
   title: string;
   description: string | null;
+  priority: TaskPriority;
+  dueDate: string | null;
   completed: boolean;
   createdAt: string;
   updatedAt: string;
   notes: Note[];
 }
 
+export type TaskPriority = 'low' | 'medium' | 'high';
+
 export interface CreateTaskPayload {
   title: string;
   description?: string;
+  priority?: TaskPriority;
+  dueDate?: string | null;
   notes?: CreateNotePayload[];
 }
 
 export interface UpdateTaskPayload {
   title?: string;
   description?: string;
+  priority?: TaskPriority;
+  dueDate?: string | null;
   completed?: boolean;
 }
 
@@ -34,6 +42,7 @@ export interface CreateNotePayload {
 }
 
 export type TaskFilter = 'all' | 'pending' | 'completed';
+export type TaskSort = 'newest' | 'oldest' | 'priority' | 'due-soon' | 'alphabetical';
 
 export interface TaskCounts {
   all: number;
@@ -59,6 +68,13 @@ export interface TaskListResponse {
 export interface AuthUser {
   id: string;
   email: string | null;
+}
+
+export interface WorkspaceUser {
+  id: string;
+  email: string | null;
+  name: string;
+  mode: 'live' | 'demo';
 }
 
 export interface ApiSuccess<T> {

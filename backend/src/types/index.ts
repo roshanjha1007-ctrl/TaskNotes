@@ -13,6 +13,8 @@ export interface Task {
   userId: string | null;
   title: string;
   description: string | null;
+  priority: TaskPriority;
+  dueDate: Date | null;
   completed: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -21,15 +23,21 @@ export interface Task {
 
 // ─── Request Bodies ───────────────────────────────────────────────────────────
 
+export type TaskPriority = 'low' | 'medium' | 'high';
+
 export interface CreateTaskBody {
   title: string;
   description?: string;
+  priority?: TaskPriority;
+  dueDate?: string;
   notes?: CreateNoteBody[];
 }
 
 export interface UpdateTaskBody {
   title?: string;
   description?: string;
+  priority?: TaskPriority;
+  dueDate?: string | null;
   completed?: boolean;
 }
 

@@ -19,6 +19,8 @@ const router = Router();
 const createTaskRules = [
   body('title').trim().notEmpty().withMessage('Title is required.').isLength({ max: 200 }).withMessage('Title must be ≤ 200 characters.'),
   body('description').optional().isString().isLength({ max: 2000 }).withMessage('Description must be ≤ 2000 characters.'),
+  body('priority').optional().isIn(['low', 'medium', 'high']).withMessage('priority must be low, medium, or high.'),
+  body('dueDate').optional().isISO8601().withMessage('dueDate must be a valid ISO date string.'),
   body('notes').optional().isArray({ max: 10 }).withMessage('notes must be an array with at most 10 items.'),
   body('notes.*.content')
     .optional()
@@ -32,6 +34,8 @@ const createTaskRules = [
 const updateTaskRules = [
   body('title').optional().trim().notEmpty().withMessage('Title cannot be empty.').isLength({ max: 200 }),
   body('description').optional({ nullable: true }).isString().isLength({ max: 2000 }),
+  body('priority').optional().isIn(['low', 'medium', 'high']).withMessage('priority must be low, medium, or high.'),
+  body('dueDate').optional({ nullable: true }).isISO8601().withMessage('dueDate must be a valid ISO date string.'),
   body('completed').optional().isBoolean().withMessage('completed must be a boolean.'),
 ];
 

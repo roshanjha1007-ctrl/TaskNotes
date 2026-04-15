@@ -5,6 +5,10 @@ import { CreateTaskBody, UpdateTaskBody, CreateNoteBody, TaskListQuery } from '.
 
 const TASK_INCLUDE = { notes: { orderBy: { createdAt: 'asc' as const } } };
 
+function toPrismaPriority(priority?: 'low' | 'medium' | 'high') {
+  return priority ? priority.toUpperCase() as 'LOW' | 'MEDIUM' | 'HIGH' : 'MEDIUM';
+}
+
 function getUserId(req: Request): string {
   if (!req.user?.id) throw new AppError(401, 'Authentication required.');
   return req.user.id;
@@ -14,7 +18,7 @@ function getUserId(req: Request): string {
 
 export async function createTask(req: Request, res: Response, next: NextFunction) {
   try {
-    const { title, description, notes }: CreateTaskBody = req.body;
+    const { title, description, priority, dueDate, notes }: CreateTaskBody = req.body;
     const userId = getUserId(req);
 
     const task = await prisma.task.create({
@@ -22,6 +26,8 @@ export async function createTask(req: Request, res: Response, next: NextFunction
         userId,
         title: title.trim(),
         description: description?.trim() ?? null,
+        priority: toPrismaPriority(priority),
+        dueDate: dueDate ? new Date(dueDate) : null,
         ...(notes?.length
           ? {
               notes: {
@@ -127,7 +133,7 @@ export async function getTaskById(req: Request, res: Response, next: NextFunctio
 
 export async function updateTask(req: Request, res: Response, next: NextFunction) {
   try {
-    const { title, description, completed }: UpdateTaskBody = req.body;
+    const { title, description, priority, dueDate, completed }: UpdateTaskBody = req.body;
     const userId = getUserId(req);
 
     const existing = await prisma.task.findUnique({ where: { id: req.params.id } });
@@ -138,6 +144,8 @@ export async function updateTask(req: Request, res: Response, next: NextFunction
       data: {
         ...(title !== undefined && { title: title.trim() }),
         ...(description !== undefined && { description: description.trim() || null }),
+        ...(priority !== undefined && { priority: toPrismaPriority(priority) }),
+        ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
         ...(completed !== undefined && { completed }),
       },
       include: TASK_INCLUDE,
