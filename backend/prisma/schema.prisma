@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  userId      String?  @map("user_id")
+  title       String
+  description String?
+  completed   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  notes       Note[]
+
+  @@index([userId, completed, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("tasks")
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  content   String
+  taskId    String   @map("task_id")
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([taskId])
+  @@map("notes")
+}
