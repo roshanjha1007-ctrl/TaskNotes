@@ -7,7 +7,9 @@ import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 
 import authRoutes from './routes/auth.routes';
+import questionRoutes from './routes/question.routes';
 import roshanRoutes from './routes/roshan.routes';
+import responseRoutes from './routes/response.routes';
 import taskRoutes from './routes/task.routes';
 import { errorHandler } from './middleware/errorHandler';
 import { AppError } from './middleware/errorHandler';
@@ -51,6 +53,8 @@ app.get('/health', (_req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/api', roshanRoutes);
+app.use('/questions', questionRoutes);
+app.use('/responses', responseRoutes);
 app.use('/tasks', taskRoutes);
 
 // 404 catch-all

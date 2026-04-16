@@ -14,6 +14,21 @@ enum TaskPriority {
   HIGH
 }
 
+enum ReflectionQuestionType {
+  NUMBER
+  TEXT
+  RATING
+  YES_NO
+  MULTI_SELECT
+  COLOR_SELECT
+}
+
+enum ReflectionGraphType {
+  LINE
+  BAR
+  DOTS
+}
+
 model Task {
   id          String   @id @default(cuid())
   userId      String?  @map("user_id")
@@ -42,4 +57,27 @@ model Note {
 
   @@index([taskId])
   @@map("notes")
+}
+
+model UserQuestionConfig {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id")
+  questions Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("user_question_configs")
+}
+
+model DailyResponse {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  date      String
+  answers   Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, date])
+  @@index([userId, date])
+  @@map("daily_responses")
 }

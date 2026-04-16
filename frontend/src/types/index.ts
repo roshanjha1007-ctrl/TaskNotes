@@ -84,6 +84,58 @@ export interface WorkspaceUser {
   mode: 'live' | 'demo';
 }
 
+export type ReflectionQuestionType =
+  | 'number'
+  | 'text'
+  | 'rating'
+  | 'yes_no'
+  | 'multi_select'
+  | 'color_select';
+
+export type ReflectionGraphType = 'line' | 'bar' | 'dots';
+
+export interface ReflectionOption {
+  label: string;
+  color: string;
+}
+
+export interface ReflectionQuestion {
+  id: string;
+  questionText: string;
+  type: ReflectionQuestionType;
+  options: ReflectionOption[];
+  graphType: ReflectionGraphType;
+  defaultColor: string | null;
+  hasResponses: boolean;
+}
+
+export interface ReflectionQuestionSet {
+  userId: string;
+  questions: ReflectionQuestion[];
+}
+
+export interface DailyReflectionAnswer {
+  questionId: string;
+  value: unknown;
+  selectedColor?: string | null;
+}
+
+export interface DailyReflectionResponse {
+  id?: string;
+  userId?: string;
+  date: string;
+  answers: DailyReflectionAnswer[];
+}
+
+export interface SaveQuestionsPayload {
+  questions: ReflectionQuestion[];
+}
+
+export interface SaveResponsesPayload {
+  date: string;
+  answers: DailyReflectionAnswer[];
+}
+
 export interface ApiSuccess<T> {
   success: true;
   data: T;

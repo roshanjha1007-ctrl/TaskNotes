@@ -13,11 +13,13 @@ import {
 import { clearRoshanSession, hasValidRoshanSession, readRoshanSession } from './lib/roshan';
 import { supabase } from './lib/supabase';
 import { AuthScreen } from './components/AuthScreen';
+import { CustomizeQuestionsModal } from './components/CustomizeQuestionsModal';
 import { CreateTaskModal } from './components/CreateTaskModal';
 import { InsightsPanel } from './components/InsightsPanel';
 import { OnboardingScreen } from './components/OnboardingScreen';
 import { RoshanDashboard } from './components/RoshanDashboard';
 import { TaskFeedCard } from './components/TaskFeedCard';
+import { useReflectionData } from './hooks/useReflectionData';
 import { Button } from './components/ui/Button';
 import { Card } from './components/ui/Card';
 import { ToastMessage, ToastRegion } from './components/ui/ToastRegion';
@@ -218,12 +220,14 @@ function Workspace({
     goToNextPage,
   } = isLiveUser ? liveTasks : demoTasks;
   const [showCreate, setShowCreate] = useState(false);
+  const [showCustomizeQuestions, setShowCustomizeQuestions] = useState(false);
   const [sort, setSort] = useState<TaskSort>('newest');
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [mobileTab, setMobileTab] = useState<WorkspaceTab>('feed');
   const [menuOpen, setMenuOpen] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const reflectionData = useReflectionData(isLiveUser);
 
   const visibleTasks = useMemo(() => (isLiveUser ? sortTasks(tasks, sort) : []), [isLiveUser, sort, tasks]);
   const pendingTasks = useMemo(() => visibleTasks.filter((task) => !task.completed), [visibleTasks]);
@@ -479,11 +483,22 @@ function Workspace({
 
   const dashboardContent = (
     <InsightsPanel
-      checkInStorageKey={`tasknotes-monthly-checkins-${user.id}`}
       tasks={visibleTasks}
       dueTodayCount={dueTodayCount}
       urgentCount={urgentCount}
+      reflectionQuestions={reflectionData.questions}
+      reflectionResponses={reflectionData.responses}
+      reflectionLoading={reflectionData.loading}
+      reflectionSaving={reflectionData.savingResponse}
       onCreateTask={() => setShowCreate(true)}
+      onOpenCustomizeQuestions={() => setShowCustomizeQuestions(true)}
+      onSaveResponse={(response) =>
+        wrapAction(
+          () => reflectionData.saveResponse(response),
+          'Reflection saved.',
+          'We couldn’t save today’s reflection.',
+        )
+      }
       onFilterChange={setFilter}
       onNotify={(message, tone = 'info') => pushToast(createToast(message, tone))}
     />
@@ -683,6 +698,21 @@ function Workspace({
               pushToast(getTaskMotivationToast());
               return result;
             })()
+          }
+        />
+      ) : null}
+
+      {showCustomizeQuestions && isLiveUser ? (
+        <CustomizeQuestionsModal
+          questions={reflectionData.questions}
+          saving={reflectionData.savingQuestions}
+          onClose={() => setShowCustomizeQuestions(false)}
+          onSave={(questions) =>
+            wrapAction(
+              () => reflectionData.saveQuestions(questions),
+              'Custom questions updated.',
+              'We couldn’t save your custom questions.',
+            )
           }
         />
       ) : null}

@@ -1,15 +1,21 @@
-import { Task, TaskFilter } from '../types';
-import { MonthlyCheckInPanel } from './MonthlyCheckInPanel';
+import { DailyReflectionResponse, ReflectionQuestion, Task, TaskFilter } from '../types';
+import { DynamicCheckInPanel } from './DynamicCheckInPanel';
+import { ReflectionGraphs } from './ReflectionGraphs';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { BarChartIcon, CalendarDaysIcon, PlusIcon, SlidersIcon } from './ui/Icons';
 
 interface InsightsPanelProps {
-  checkInStorageKey: string;
   tasks: Task[];
   dueTodayCount: number;
   urgentCount: number;
+  reflectionQuestions: ReflectionQuestion[];
+  reflectionResponses: DailyReflectionResponse[];
+  reflectionLoading: boolean;
+  reflectionSaving: boolean;
   onCreateTask: () => void;
+  onOpenCustomizeQuestions: () => void;
+  onSaveResponse: (response: DailyReflectionResponse) => Promise<unknown>;
   onFilterChange: (filter: TaskFilter) => void;
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
 }
@@ -38,11 +44,16 @@ function getTrendData(tasks: Task[]) {
 }
 
 export function InsightsPanel({
-  checkInStorageKey,
   tasks,
   dueTodayCount: _dueTodayCount,
   urgentCount: _urgentCount,
+  reflectionQuestions,
+  reflectionResponses,
+  reflectionLoading,
+  reflectionSaving,
   onCreateTask,
+  onOpenCustomizeQuestions,
+  onSaveResponse,
   onFilterChange,
   onNotify,
 }: InsightsPanelProps) {
@@ -52,14 +63,28 @@ export function InsightsPanel({
   return (
     <div className="space-y-8">
       <div className="mx-auto w-full max-w-[1200px]">
-        <MonthlyCheckInPanel
-          storageKey={checkInStorageKey}
-          tasks={tasks}
-          title="End-of-day reflection"
-          submitLabel="Submit response"
-          quoteLabel="Appreciation after submit"
+        <DynamicCheckInPanel
+          questions={reflectionQuestions}
+          responses={reflectionResponses}
+          saving={reflectionSaving}
+          onSave={onSaveResponse}
+          onCustomize={onOpenCustomizeQuestions}
           onNotify={onNotify}
         />
+      </div>
+
+      <div className="mx-auto w-full max-w-[1200px]">
+        {reflectionLoading ? (
+          <Card className="rounded-[28px] p-5 text-sm text-[var(--text-secondary)]">
+            Loading your custom questions and response history...
+          </Card>
+        ) : (
+          <ReflectionGraphs
+            questions={reflectionQuestions}
+            responses={reflectionResponses}
+            onCustomize={onOpenCustomizeQuestions}
+          />
+        )}
       </div>
 
       <div className="mx-auto grid w-full max-w-[1200px] gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
@@ -99,6 +124,14 @@ export function InsightsPanel({
             <Button className="h-12 justify-start text-base shadow-[var(--shadow-md)]" onClick={onCreateTask}>
               <PlusIcon width={16} height={16} />
               Add task
+            </Button>
+            <Button
+              variant="secondary"
+              className="h-11 justify-start"
+              onClick={onOpenCustomizeQuestions}
+            >
+              <SlidersIcon width={16} height={16} />
+              Customize Your Questions
             </Button>
             <Button variant="secondary" className="h-11 justify-start" onClick={() => onFilterChange('pending')}>
               <SlidersIcon width={16} height={16} />
