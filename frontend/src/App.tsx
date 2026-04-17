@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Session } from '@supabase/supabase-js';
+import { onIdTokenChanged, signOut, type User } from 'firebase/auth';
 import { authApi } from './api/auth';
 import { setApiAuthToken } from './api/client';
 import { useDemoTasks } from './hooks/useDemoTasks';
@@ -10,8 +10,8 @@ import {
   readOnboardingState,
   writeOnboardingState,
 } from './lib/demo';
+import { firebaseAuth } from './lib/firebase';
 import { clearRoshanSession, hasValidRoshanSession, readRoshanSession } from './lib/roshan';
-import { supabase } from './lib/supabase';
 import { AuthScreen } from './components/AuthScreen';
 import { CustomizeQuestionsModal } from './components/CustomizeQuestionsModal';
 import { CreateTaskModal } from './components/CreateTaskModal';
@@ -88,11 +88,11 @@ function sortTasks(tasks: Task[], sort: TaskSort) {
   });
 }
 
-function getWorkspaceUser(session: Session | null, authUser: AuthUser | null): WorkspaceUser | null {
-  if (!session) return null;
-  const email = authUser?.email ?? session.user.email ?? null;
+function getWorkspaceUser(user: User | null, authUser: AuthUser | null): WorkspaceUser | null {
+  if (!user) return null;
+  const email = authUser?.email ?? user.email ?? null;
   return {
-    id: authUser?.id ?? session.user.id,
+    id: authUser?.id ?? user.uid,
     email,
     name: email?.split('@')[0] ?? 'Teammate',
     isOwner: authUser?.isOwner ?? false,
@@ -726,7 +726,7 @@ function Workspace({
 }
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<User | null>(null);
   const [verifiedUser, setVerifiedUser] = useState<AuthUser | null>(null);
   const [demoUser, setDemoUser] = useState<WorkspaceUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -748,26 +748,23 @@ export default function App() {
     }
 
     let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
+    const unsubscribe = onIdTokenChanged(firebaseAuth, async (nextSession) => {
       if (!mounted) return;
-      setSession(data.session);
-      setApiAuthToken(data.session?.access_token ?? null);
-      setAuthReady(true);
-    });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (nextSession) {
         clearDemoUser();
         setDemoUser(null);
       }
+
       setSession(nextSession);
-      setApiAuthToken(nextSession?.access_token ?? null);
+      setApiAuthToken(nextSession ? await nextSession.getIdToken() : null);
+      setAuthReady(true);
     });
 
     return () => {
       mounted = false;
       window.removeEventListener('popstate', syncPath);
-      listener.subscription.unsubscribe();
+      unsubscribe();
     };
   }, []);
 
@@ -795,7 +792,7 @@ export default function App() {
           ...current,
           createToast('Your session expired. Please sign in again.', 'error'),
         ]);
-        await supabase.auth.signOut();
+        await signOut(firebaseAuth);
         setSession(null);
         setApiAuthToken(null);
       } finally {
@@ -859,7 +856,7 @@ export default function App() {
   const handleSignOut = async () => {
     clearDemoUser();
     setDemoUser(null);
-    await supabase.auth.signOut();
+    await signOut(firebaseAuth);
     setSession(null);
     setVerifiedUser(null);
     setWorkspaceUser(null);

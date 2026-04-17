@@ -1,5 +1,10 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import {
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+} from 'firebase/auth';
+import { firebaseAuth } from '../lib/firebase';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { Input } from './ui/Input';
@@ -15,19 +20,33 @@ interface AuthScreenProps {
 function getFriendlyMessage(message: string) {
   const loweredMessage = message.toLowerCase();
 
-  if (loweredMessage.includes('invalid login credentials')) {
+  if (
+    loweredMessage.includes('invalid login credentials') ||
+    loweredMessage.includes('invalid-credential') ||
+    loweredMessage.includes('wrong-password') ||
+    loweredMessage.includes('user-not-found')
+  ) {
     return 'That email and password combination didn’t work. Please check your credentials and try again.';
   }
 
   if (
     loweredMessage.includes('user already registered') ||
-    loweredMessage.includes('already been registered')
+    loweredMessage.includes('already been registered') ||
+    loweredMessage.includes('email-already-in-use')
   ) {
     return 'This email already has an account. Sign in instead, or use forgot password if needed.';
   }
 
-  if (loweredMessage.includes('email not confirmed')) {
-    return 'This email is not confirmed yet. Use demo access for now, or confirm the account from your inbox before signing in.';
+  if (loweredMessage.includes('too-many-requests')) {
+    return 'Too many attempts were made. Please wait a moment, then try again.';
+  }
+
+  if (loweredMessage.includes('invalid-email')) {
+    return 'Use a valid email address.';
+  }
+
+  if (loweredMessage.includes('weak-password')) {
+    return 'Use a stronger password with at least 6 characters.';
   }
 
   return message;
@@ -68,38 +87,18 @@ export function AuthScreen({
 
     try {
       if (mode === 'forgot-password') {
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: window.location.origin,
-        });
-
-        if (resetError) throw resetError;
+        await sendPasswordResetEmail(firebaseAuth, email.trim());
         setNotice('Password reset instructions are on the way if that account exists.');
         return;
       }
 
       if (mode === 'sign-up') {
-        const { error: signUpError, data } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-        });
-
-        if (signUpError) throw signUpError;
-
-        if (data.session) {
-          onAuthenticated();
-        } else {
-          setNotice('Account created. Check your inbox if email confirmation is enabled, then sign in.');
-          setMode('sign-in');
-        }
+        await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        onAuthenticated();
         return;
       }
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-
-      if (signInError) throw signInError;
+      await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
       onAuthenticated();
     } catch (err: unknown) {
       const nextError = err as { message?: string };
@@ -154,7 +153,7 @@ export function AuthScreen({
                 <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
                   {mode === 'forgot-password'
                     ? 'We’ll send recovery instructions to your email.'
-                    : 'Sign in with your account to access your private workspace.'}
+                    : 'Sign in with Firebase to access your private workspace.'}
                 </p>
               </div>
               <div className="inline-flex items-center gap-2 rounded-full bg-[var(--surface-secondary)] px-3 py-2 text-xs font-semibold whitespace-nowrap text-[var(--text-secondary)]">

@@ -1,4 +1,4 @@
-import type { JwtPayload } from 'jose';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 
 declare global {
   namespace Express {
@@ -7,7 +7,7 @@ declare global {
       user?: {
         id: string;
         email?: string;
-        token: JwtPayload;
+        token: DecodedIdToken;
       };
     }
   }

@@ -1,11 +1,6 @@
-import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
 import { NextFunction, Request, Response } from 'express';
+import { getFirebaseAdminAuth } from '../lib/firebase-admin';
 import { AppError } from './errorHandler';
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const jwks = supabaseUrl
-  ? createRemoteJWKSet(new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`))
-  : null;
 
 function extractBearerToken(req: Request): string | null {
   const header = req.header('authorization');
@@ -16,26 +11,19 @@ function extractBearerToken(req: Request): string | null {
   return token;
 }
 
-function getUserId(payload: JWTPayload): string | null {
-  if (typeof payload.sub !== 'string' || !payload.sub) return null;
-  return payload.sub;
+function getUserId(uid: unknown): string | null {
+  if (typeof uid !== 'string' || !uid) return null;
+  return uid;
 }
 
 export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
   try {
-    if (!supabaseUrl || !jwks) {
-      throw new AppError(500, 'SUPABASE_URL is not configured on the server.');
-    }
-
     const token = extractBearerToken(req);
     if (!token) throw new AppError(401, 'Missing bearer token.');
 
-    const { payload } = await jwtVerify(token, jwks, {
-      issuer: `${supabaseUrl}/auth/v1`,
-      audience: 'authenticated',
-    });
+    const payload = await getFirebaseAdminAuth().verifyIdToken(token);
 
-    const userId = getUserId(payload);
+    const userId = getUserId(payload.uid);
     if (!userId) throw new AppError(401, 'Invalid auth token.');
 
     req.user = {
